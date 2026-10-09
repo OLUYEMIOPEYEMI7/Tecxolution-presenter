@@ -48,8 +48,8 @@ function render(state) {
 
 // Shrinks the content block (as a whole, via transform:scale so nothing
 // stretches) until it fits the stage vertically — long verses must never
-// run off the top of the screen. Anchored bottom-center so it shrinks
-// toward the same spot the layout is already anchored to.
+// run off the screen. Anchored center so it shrinks in place, matching the
+// now-centered (not bottom-pinned) layout.
 function fitContent() {
   stageContent.style.transform = 'scale(1)';
   // Force a synchronous layout read before measuring.
