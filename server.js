@@ -303,10 +303,18 @@ app.delete('/api/songs/:id', async (req, res) => {
   }
 });
 
-// Scripture lookup. Two sources:
+// Scripture lookup. Three sources:
 //  - bible-api.com for free public-domain translations (kjv, web, asv, etc.)
 //  - api.nlt.to for NLT — Tyndale's own API, explicitly free for non-commercial
 //    / ministry use (works anonymously, no key required, within fair limits).
+//  - api.scripture.api.bible for NIV / AMP / MSG — needs a registered API key
+//    (API_BIBLE_KEY env var) that the user obtains themselves.
+const API_BIBLE_IDS = {
+  niv: '78a9f6124f344018-01',
+  amp: 'a81b73293d3080c9-01',
+  msg: '6f11a7de016f942e-01',
+};
+
 app.get('/api/scripture', async (req, res) => {
   const ref = (req.query.ref || '').trim();
   const version = (req.query.version || 'kjv').trim().toLowerCase();
@@ -314,6 +322,9 @@ app.get('/api/scripture', async (req, res) => {
 
   if (version === 'nlt') {
     return fetchNltScripture(ref, res);
+  }
+  if (API_BIBLE_IDS[version]) {
+    return fetchApiBibleScripture(ref, version, res);
   }
 
   const url = `https://bible-api.com/${encodeURIComponent(ref)}?translation=${encodeURIComponent(version)}`;
@@ -335,6 +346,36 @@ app.get('/api/scripture', async (req, res) => {
     });
   }).on('error', (e) => res.status(502).json({ error: e.message }));
 });
+
+// API.Bible — used for NIV, AMP, MSG under the user's own free, registered
+// non-commercial/ministry API key.
+const API_BIBLE_NAMES = { niv: 'New International Version', amp: 'Amplified Bible', msg: 'The Message' };
+function fetchApiBibleScripture(ref, version, res) {
+  const key = process.env.API_BIBLE_KEY;
+  if (!key) return res.status(400).json({ error: 'API_BIBLE_KEY not configured on the server' });
+  const bibleId = API_BIBLE_IDS[version];
+  const url = `https://api.scripture.api.bible/v1/bibles/${bibleId}/search?query=${encodeURIComponent(ref)}`;
+  https.get(url, { headers: { 'api-key': key } }, (apiRes) => {
+    let body = '';
+    apiRes.on('data', (chunk) => (body += chunk));
+    apiRes.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const passage = data.data && data.data.passages && data.data.passages[0];
+        if (!passage) return res.status(404).json({ error: 'Reference not found' });
+        const text = passage.content
+          .replace(/<span[^>]*class="v"[^>]*>[\d-]+<\/span>/g, '') // strip inline verse-number markers (incl. ranges like "1-3")
+          .replace(/<[^>]+>/g, ' ') // strip remaining HTML tags
+          .replace(/\s+/g, ' ')
+          .replace(/\s+([,.;:!?])/g, '$1') // tidy stray space before punctuation left by stripped tags
+          .trim();
+        res.json({ reference: passage.reference, text, translation: API_BIBLE_NAMES[version] || version.toUpperCase() });
+      } catch (e) {
+        res.status(502).json({ error: 'Could not parse API.Bible response' });
+      }
+    });
+  }).on('error', (e) => res.status(502).json({ error: e.message }));
+}
 
 // NLT.TO API — HTML response, parsed with cheerio. Free anonymous key "TEST"
 // works for light/sporadic lookups (50 verses/request, 500/day); set
@@ -380,11 +421,11 @@ app.get('/api/bible-versions', (req, res) => {
       { code: 'darby', name: 'Darby Bible', available: true },
       { code: 'ylt', name: "Young's Literal Translation (NT only)", available: true },
       { code: 'nlt', name: 'New Living Translation', available: true },
+      { code: 'niv', name: 'New International Version', available: !!process.env.API_BIBLE_KEY, reason: 'Registered, but API_BIBLE_KEY not set on the server yet' },
+      { code: 'amp', name: 'Amplified Bible', available: !!process.env.API_BIBLE_KEY, reason: 'Registered, but API_BIBLE_KEY not set on the server yet' },
+      { code: 'msg', name: 'The Message', available: !!process.env.API_BIBLE_KEY, reason: 'Registered, but API_BIBLE_KEY not set on the server yet' },
       { code: 'nkjv', name: 'New King James Version', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
-      { code: 'niv', name: 'New International Version', available: false, reason: 'Free for non-commercial/ministry use via api.bible, but needs your own registered API key (not configured yet)' },
       { code: 'esv', name: 'English Standard Version', available: false, reason: 'Free for churches via api.esv.org, but needs your own registered API key (not configured yet)' },
-      { code: 'msg', name: 'The Message', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
-      { code: 'amp', name: 'Amplified Bible', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
     ],
   });
 });
