@@ -46,4 +46,5 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-socket.on('state', render);
+const isPreview = new URLSearchParams(location.search).get('mode') === 'preview';
+socket.on(isPreview ? 'preview-state' : 'live-state', render);

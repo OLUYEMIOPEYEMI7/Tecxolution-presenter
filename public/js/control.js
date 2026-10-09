@@ -83,7 +83,7 @@ function selectSong(song) {
     div.onclick = () => {
       currentSectionIndex = idx;
       highlightActiveSlide();
-      loadIntoPreview(sectionToState(song, section));
+      stageState(sectionToState(song, section));
     };
     container.appendChild(div);
   });
@@ -104,67 +104,19 @@ function sectionToState(song, section) {
   };
 }
 
-// ================= Preview / Live separation (EasyWorship-style) =================
-let previewState = null;
+// ================= Preview / Live separation (server-authoritative, EasyWorship-style) =================
+// Preview and Live are both rendered by the exact same /display page+CSS,
+// just fed by different socket channels — this guarantees Preview is a true
+// proportional miniature of Live, not an approximation.
 let currentSongSections = [];
 let currentSectionIndex = -1;
 
-function loadIntoPreview(state) {
-  previewState = state;
-  renderStage(state, 'preview-stage', 'preview-stage-bg', 'preview-stage-content', 'preview-stage-label');
-}
-
-function renderStage(state, stageId, bgId, contentId, labelId) {
-  const stage = document.getElementById(stageId);
-  const bg = document.getElementById(bgId);
-  const content = document.getElementById(contentId);
-  const label = document.getElementById(labelId);
-
-  stage.className = 'stage ' + (state && state.type ? state.type : 'blank');
-  if (state && state.background) {
-    bg.style.backgroundImage = `url('${state.background}')`;
-    bg.style.opacity = 1;
-  } else {
-    bg.style.opacity = 0;
-  }
-
-  if (!state) {
-    content.innerHTML = '';
-    label.textContent = '';
-    return;
-  }
-
-  if (state.type === 'song') {
-    let html = '';
-    (state.pairs || []).forEach(([call, response]) => {
-      html += `<div class="lyric-line">${escapeHtmlLocal(call)}`;
-      if (response) html += ` <span class="response">${escapeHtmlLocal(response)}</span>`;
-      html += `</div>`;
-    });
-    if (state.finale) html += `<div class="finale-banner">${escapeHtmlLocal(state.finale)}</div>`;
-    content.innerHTML = html;
-    label.textContent = state.label || '';
-  } else if (state.type === 'scripture') {
-    content.innerHTML = `
-      <div class="scripture-ref">${escapeHtmlLocal(state.reference || '')}</div>
-      <div class="scripture-text">${escapeHtmlLocal(state.text || '')}</div>
-      <div class="scripture-translation">${escapeHtmlLocal(state.translation || '')}</div>`;
-    label.textContent = '';
-  } else {
-    content.innerHTML = '';
-    label.textContent = '';
-  }
-}
-
-function escapeHtmlLocal(str) {
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
+function stageState(state) {
+  socket.emit('stage', state);
 }
 
 function goLive() {
-  if (!previewState) return;
-  socket.emit('project', previewState);
+  socket.emit('golive');
 }
 
 function nextSlide() {
@@ -172,7 +124,7 @@ function nextSlide() {
   if (currentSectionIndex < currentSongSections.length - 1) {
     currentSectionIndex++;
     highlightActiveSlide();
-    loadIntoPreview(sectionToState(activeSong, currentSongSections[currentSectionIndex]));
+    stageState(sectionToState(activeSong, currentSongSections[currentSectionIndex]));
   }
 }
 
@@ -181,7 +133,7 @@ function prevSlide() {
   if (currentSectionIndex > 0) {
     currentSectionIndex--;
     highlightActiveSlide();
-    loadIntoPreview(sectionToState(activeSong, currentSongSections[currentSectionIndex]));
+    stageState(sectionToState(activeSong, currentSongSections[currentSectionIndex]));
   }
 }
 
@@ -208,7 +160,7 @@ function stageScripture() {
       }
       statusEl.textContent = 'Staged: ' + data.reference + ' (click GO LIVE)';
       currentSongSections = [];
-      loadIntoPreview({
+      stageState({
         type: 'scripture',
         reference: data.reference,
         text: data.text,
@@ -293,7 +245,7 @@ function addScriptureToSchedule() {
 function loadScheduleItem(item) {
   if (item.stateType === 'song') {
     currentSongSections = [];
-    loadIntoPreview(item.state);
+    stageState(item.state);
   } else if (item.stateType === 'scripture-ref') {
     const statusEl = document.getElementById('scripture-status');
     statusEl.textContent = 'Looking up… ' + item.ref;
@@ -306,7 +258,7 @@ function loadScheduleItem(item) {
         }
         statusEl.textContent = 'Staged: ' + data.reference;
         currentSongSections = [];
-        loadIntoPreview({ type: 'scripture', reference: data.reference, text: data.text, translation: data.translation, background: null });
+        stageState({ type: 'scripture', reference: data.reference, text: data.text, translation: data.translation, background: null });
       });
   }
 }

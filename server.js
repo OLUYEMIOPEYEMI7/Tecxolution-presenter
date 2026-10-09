@@ -31,8 +31,13 @@ function slugify(title) {
   return 'song-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
 }
 
-// Current live state, so a newly-opened display catches up instantly
-let currentState = { type: 'blank' };
+// Two independent states: liveState is what the audience sees, previewState
+// is staged but not yet visible. They're broadcast on separate socket events
+// so the Preview and Live iframes (both /display, same rendering code) stay
+// perfectly proportional to each other — Preview is a true miniature of Live,
+// not an approximation.
+let liveState = { type: 'blank' };
+let previewState = { type: 'blank' };
 
 app.get('/control', (req, res) => res.sendFile(path.join(__dirname, 'views', 'control.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'display.html')));
@@ -100,17 +105,31 @@ app.get('/api/scripture', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-  // Catch up any newly-connected display/control client
-  socket.emit('state', currentState);
+  // Catch up any newly-connected display/control client on both channels
+  socket.emit('live-state', liveState);
+  socket.emit('preview-state', previewState);
 
+  // Stage content into Preview only — does not touch what the audience sees
+  socket.on('stage', (payload) => {
+    previewState = payload;
+    io.emit('preview-state', previewState);
+  });
+
+  // Promote whatever is currently staged in Preview to Live
+  socket.on('golive', () => {
+    liveState = previewState;
+    io.emit('live-state', liveState);
+  });
+
+  // Direct-to-live, bypassing Preview entirely (used by Voice Detect auto-project)
   socket.on('project', (payload) => {
-    currentState = payload;
-    io.emit('state', currentState);
+    liveState = payload;
+    io.emit('live-state', liveState);
   });
 
   socket.on('clear', () => {
-    currentState = { type: 'blank' };
-    io.emit('state', currentState);
+    liveState = { type: 'blank' };
+    io.emit('live-state', liveState);
   });
 });
 
