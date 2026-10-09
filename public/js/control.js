@@ -327,12 +327,32 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { clearStage(); e.preventDefault(); }
 });
 
+function getSelectedBibleVersion() {
+  const sel = document.getElementById('bible-version-select');
+  return sel && sel.value ? sel.value : 'kjv';
+}
+
+function scriptureUrl(ref) {
+  return '/api/scripture?ref=' + encodeURIComponent(ref) + '&version=' + encodeURIComponent(getSelectedBibleVersion());
+}
+
+fetch('/api/bible-versions')
+  .then((r) => r.json())
+  .then((data) => {
+    const sel = document.getElementById('bible-version-select');
+    sel.innerHTML = data.versions.map((v) => {
+      const label = v.available ? v.name : `${v.name} (not available — ${v.reason})`;
+      return `<option value="${v.code}" ${v.available ? '' : 'disabled'}>${label}</option>`;
+    }).join('');
+    sel.value = 'kjv';
+  });
+
 function stageScripture() {
   const ref = document.getElementById('scripture-input').value.trim();
   if (!ref) return;
   const statusEl = document.getElementById('scripture-status');
   statusEl.textContent = 'Looking up…';
-  fetch('/api/scripture?ref=' + encodeURIComponent(ref))
+  fetch(scriptureUrl(ref))
     .then((r) => r.json())
     .then((data) => {
       if (data.error) {
@@ -461,7 +481,7 @@ function loadScheduleItem(item) {
   } else if (item.stateType === 'scripture-ref') {
     const statusEl = document.getElementById('scripture-status');
     statusEl.textContent = 'Looking up… ' + item.ref;
-    fetch('/api/scripture?ref=' + encodeURIComponent(item.ref))
+    fetch(scriptureUrl(item.ref))
       .then((r) => r.json())
       .then((data) => {
         if (data.error) {
@@ -502,7 +522,7 @@ let pendingSuggestion = null;
 function projectScriptureByRef(ref) {
   const statusEl = document.getElementById('scripture-status');
   statusEl.textContent = 'Looking up… ' + ref;
-  return fetch('/api/scripture?ref=' + encodeURIComponent(ref))
+  return fetch(scriptureUrl(ref))
     .then((r) => r.json())
     .then((data) => {
       if (data.error) {

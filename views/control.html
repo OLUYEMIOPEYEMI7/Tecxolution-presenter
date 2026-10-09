@@ -56,7 +56,8 @@
       <h2 style="margin-top:24px;">Scripture</h2>
       <div class="scripture-box">
         <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" />
-        <div style="display:flex; gap:8px;">
+        <select id="bible-version-select" style="width:100%; margin-top:6px; padding:7px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px;"></select>
+        <div style="display:flex; gap:8px; margin-top:6px;">
           <button onclick="stageScripture()">Stage in Preview</button>
           <button class="secondary" onclick="addScriptureToSchedule()">+ Schedule</button>
         </div>

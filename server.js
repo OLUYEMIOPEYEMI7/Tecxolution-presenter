@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const multer = require('multer');
+const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,16 +14,48 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// ---------------------------------------------------------------------------
+// Persistent storage: if DATABASE_URL is set (shared Render Postgres reused
+// from the Academy project), custom songs / announcements / uploaded theme
+// images survive redeploys. Without it, falls back to local JSON files + disk
+// (fine for local dev, but wiped on every Render redeploy).
+// ---------------------------------------------------------------------------
+const DATABASE_URL = process.env.DATABASE_URL;
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
+
+async function initDb() {
+  if (!pool) {
+    console.log('No DATABASE_URL set — using local file storage (not persistent across redeploys).');
+    return;
+  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wp_custom_songs (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      artist TEXT,
+      sections JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS wp_announcements (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS wp_theme_images (
+      id TEXT PRIMARY KEY,
+      filename TEXT,
+      mimetype TEXT,
+      data BYTEA,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `);
+  console.log('Connected to persistent Postgres storage.');
+}
+
 const customThemeImageDir = path.join(__dirname, 'public', 'images', 'custom-themes');
 fs.mkdirSync(customThemeImageDir, { recursive: true });
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: customThemeImageDir,
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname) || '.jpg';
-      cb(null, 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
   fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
 });
@@ -30,29 +63,12 @@ const upload = multer({
 const songsPath = path.join(__dirname, 'data', 'songs.json');
 const hymnsPath = path.join(__dirname, 'data', 'hymns.json');
 const announcementsPath = path.join(__dirname, 'data', 'announcements.json');
-
-function loadSongs() {
-  return JSON.parse(fs.readFileSync(songsPath, 'utf8'));
-}
-
-function saveSongs(data) {
-  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
-}
+const rccgHymnalPath = path.join(__dirname, 'data', 'rccg-hymnal.json');
 
 function loadHymns() {
   return JSON.parse(fs.readFileSync(hymnsPath, 'utf8'));
 }
 
-function loadAnnouncements() {
-  if (!fs.existsSync(announcementsPath)) return { announcements: [] };
-  return JSON.parse(fs.readFileSync(announcementsPath, 'utf8'));
-}
-
-function saveAnnouncements(data) {
-  fs.writeFileSync(announcementsPath, JSON.stringify(data, null, 2));
-}
-
-const rccgHymnalPath = path.join(__dirname, 'data', 'rccg-hymnal.json');
 function loadRccgHymnal() {
   return JSON.parse(fs.readFileSync(rccgHymnalPath, 'utf8'));
 }
@@ -61,12 +77,96 @@ function slugify(title) {
   return 'song-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
 }
 
+// ---- Custom songs (persistent) ----
+async function loadCustomSongs() {
+  if (pool) {
+    const { rows } = await pool.query('SELECT id, title, artist, sections FROM wp_custom_songs ORDER BY created_at');
+    return rows;
+  }
+  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+  return data.songs;
+}
+
+async function addCustomSong(song) {
+  if (pool) {
+    await pool.query('INSERT INTO wp_custom_songs (id, title, artist, sections) VALUES ($1, $2, $3, $4)', [
+      song.id, song.title, song.artist, JSON.stringify(song.sections),
+    ]);
+    return;
+  }
+  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+  data.songs.push(song);
+  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
+}
+
+async function deleteCustomSong(id) {
+  if (pool) {
+    const { rowCount } = await pool.query('DELETE FROM wp_custom_songs WHERE id = $1', [id]);
+    return rowCount > 0;
+  }
+  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+  const before = data.songs.length;
+  data.songs = data.songs.filter((s) => s.id !== id);
+  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
+  return data.songs.length < before;
+}
+
+// ---- Announcements (persistent) ----
+async function loadAnnouncementsList() {
+  if (pool) {
+    const { rows } = await pool.query('SELECT id, text FROM wp_announcements ORDER BY created_at');
+    return rows;
+  }
+  if (!fs.existsSync(announcementsPath)) return [];
+  return JSON.parse(fs.readFileSync(announcementsPath, 'utf8')).announcements;
+}
+
+async function addAnnouncementItem(text) {
+  const newItem = { id: 'ann-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text };
+  if (pool) {
+    await pool.query('INSERT INTO wp_announcements (id, text) VALUES ($1, $2)', [newItem.id, newItem.text]);
+    return newItem;
+  }
+  const data = fs.existsSync(announcementsPath) ? JSON.parse(fs.readFileSync(announcementsPath, 'utf8')) : { announcements: [] };
+  data.announcements.push(newItem);
+  fs.writeFileSync(announcementsPath, JSON.stringify(data, null, 2));
+  return newItem;
+}
+
+async function deleteAnnouncementItem(id) {
+  if (pool) {
+    const { rowCount } = await pool.query('DELETE FROM wp_announcements WHERE id = $1', [id]);
+    return rowCount > 0;
+  }
+  const data = fs.existsSync(announcementsPath) ? JSON.parse(fs.readFileSync(announcementsPath, 'utf8')) : { announcements: [] };
+  const before = data.announcements.length;
+  data.announcements = data.announcements.filter((a) => a.id !== id);
+  fs.writeFileSync(announcementsPath, JSON.stringify(data, null, 2));
+  return data.announcements.length < before;
+}
+
+// ---- Theme images (persistent: stored as bytes in Postgres; falls back to disk) ----
+async function saveThemeImage(buffer, mimetype, originalname) {
+  const ext = path.extname(originalname) || '.jpg';
+  const id = 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  if (pool) {
+    await pool.query('INSERT INTO wp_theme_images (id, filename, mimetype, data) VALUES ($1, $2, $3, $4)', [
+      id, id + ext, mimetype, buffer,
+    ]);
+    return '/api/theme-image/' + id;
+  }
+  const filename = id + ext;
+  fs.writeFileSync(path.join(customThemeImageDir, filename), buffer);
+  return '/images/custom-themes/' + filename;
+}
+
 // Builds the full merged song list (all sources) with their complete section
 // data, plus a precomputed lowercase search blob (title+artist+number+all
 // lyric lines) so keyword search doesn't re-scan structured JSON per request.
 let songCache = null;
-function buildSongCache() {
-  const custom = loadSongs().songs.map((s) => ({ ...s, source: 'custom' }));
+async function buildSongCache() {
+  const customRows = await loadCustomSongs();
+  const custom = customRows.map((s) => ({ ...s, source: 'custom' }));
   const hymns = loadHymns().hymns.map((h) => ({ ...h, source: 'hymn' }));
   const rccg = loadRccgHymnal().hymns.map((h) => ({ ...h, source: 'rccg' }));
   const all = [...custom, ...hymns, ...rccg];
@@ -80,8 +180,8 @@ function buildSongCache() {
   return songCache;
 }
 
-function getAllSongsFull() {
-  return songCache || buildSongCache();
+async function getAllSongsFull() {
+  return songCache || (await buildSongCache());
 }
 
 // Two independent states: liveState is what the audience sees, previewState
@@ -97,12 +197,12 @@ app.get('/control', (req, res) => res.sendFile(path.join(__dirname, 'views', 'co
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'display.html')));
 app.get('/', (req, res) => res.redirect('/control'));
 
-app.get('/api/songs', (req, res) => {
+app.get('/api/songs', async (req, res) => {
   // Lightweight metadata only — full lyrics are fetched on demand via /api/songs/:id
   // so the browser doesn't have to download the entire ~3MB hymnal up front.
   // ?q= searches title, artist, hymn number AND full lyric text (keyword search).
   // ?source= filters to custom|hymn|rccg.
-  let all = getAllSongsFull();
+  let all = await getAllSongsFull();
   const q = (req.query.q || '').trim().toLowerCase();
   const source = req.query.source || 'all';
 
@@ -142,50 +242,54 @@ app.get('/api/songs', (req, res) => {
   res.json({ songs: light });
 });
 
-app.get('/api/songs/:id', (req, res) => {
-  const song = getAllSongsFull().find((s) => s.id === req.params.id);
+app.get('/api/songs/:id', async (req, res) => {
+  const all = await getAllSongsFull();
+  const song = all.find((s) => s.id === req.params.id);
   if (!song) return res.status(404).json({ error: 'Song not found' });
   res.json(song);
 });
 
 // Add a new custom song
-app.post('/api/songs', (req, res) => {
+app.post('/api/songs', async (req, res) => {
   const { title, artist, sections } = req.body;
   if (!title || !Array.isArray(sections) || sections.length === 0) {
     return res.status(400).json({ error: 'title and at least one section are required' });
   }
-  const data = loadSongs();
   const newSong = {
     id: slugify(title),
     title,
     artist: artist || '',
     sections,
   };
-  data.songs.push(newSong);
-  saveSongs(data);
-  songCache = null; // invalidate so the new song is searchable immediately
-  res.json(newSong);
+  try {
+    await addCustomSong(newSong);
+    songCache = null; // invalidate so the new song is searchable immediately
+    res.json(newSong);
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save song: ' + e.message });
+  }
 });
 
 // Delete a custom song (hymns in the compendium cannot be deleted this way)
-app.delete('/api/songs/:id', (req, res) => {
-  const data = loadSongs();
-  const before = data.songs.length;
-  data.songs = data.songs.filter((s) => s.id !== req.params.id);
-  if (data.songs.length === before) {
-    return res.status(404).json({ error: 'Song not found (hymns cannot be deleted)' });
+app.delete('/api/songs/:id', async (req, res) => {
+  try {
+    const deleted = await deleteCustomSong(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Song not found (hymns cannot be deleted)' });
+    songCache = null; // invalidate
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not delete song: ' + e.message });
   }
-  saveSongs(data);
-  songCache = null; // invalidate
-  res.json({ ok: true });
 });
 
-// Scripture lookup — proxies bible-api.com (free, no key required)
+// Scripture lookup — proxies bible-api.com (free, public-domain translations;
+// no key required). Supported: kjv, web (default), asv, bbe, darby, ylt, etc.
 app.get('/api/scripture', (req, res) => {
   const ref = (req.query.ref || '').trim();
+  const version = (req.query.version || 'kjv').trim().toLowerCase();
   if (!ref) return res.status(400).json({ error: 'Missing ref' });
 
-  const url = `https://bible-api.com/${encodeURIComponent(ref)}`;
+  const url = `https://bible-api.com/${encodeURIComponent(ref)}?translation=${encodeURIComponent(version)}`;
   https.get(url, (apiRes) => {
     let body = '';
     apiRes.on('data', (chunk) => (body += chunk));
@@ -196,7 +300,7 @@ app.get('/api/scripture', (req, res) => {
         res.json({
           reference: data.reference,
           text: data.text.trim().replace(/\n/g, ' ').replace(/\s+/g, ' '),
-          translation: (data.translation_name || 'KJV'),
+          translation: (data.translation_name || version.toUpperCase()),
         });
       } catch (e) {
         res.status(502).json({ error: 'Could not parse scripture response' });
@@ -205,34 +309,80 @@ app.get('/api/scripture', (req, res) => {
   }).on('error', (e) => res.status(502).json({ error: e.message }));
 });
 
+// List of Bible versions the app can look up. Free/public-domain ones work
+// immediately via bible-api.com. Copyrighted ones (NIV/NLT/ESV/MSG/NKJV/AMP)
+// are NOT fetchable through any free, no-key API and are listed here only to
+// show their status honestly in the UI.
+app.get('/api/bible-versions', (req, res) => {
+  res.json({
+    versions: [
+      { code: 'kjv', name: 'King James Version', available: true },
+      { code: 'web', name: 'World English Bible', available: true },
+      { code: 'webbe', name: 'World English Bible (British)', available: true },
+      { code: 'asv', name: 'American Standard Version', available: true },
+      { code: 'bbe', name: 'Bible in Basic English', available: true },
+      { code: 'darby', name: 'Darby Bible', available: true },
+      { code: 'ylt', name: "Young's Literal Translation (NT only)", available: true },
+      { code: 'nkjv', name: 'New King James Version', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
+      { code: 'niv', name: 'New International Version', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
+      { code: 'nlt', name: 'New Living Translation', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
+      { code: 'esv', name: 'English Standard Version', available: false, reason: 'Free for churches via api.esv.org, but needs your own registered API key (not configured yet)' },
+      { code: 'msg', name: 'The Message', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
+      { code: 'amp', name: 'Amplified Bible', available: false, reason: 'Copyrighted — requires a paid API.Bible license' },
+    ],
+  });
+});
+
 // Upload an image to use as a custom theme background
-app.post('/api/theme-image', upload.single('image'), (req, res) => {
+app.post('/api/theme-image', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded (must be an image file, max 8MB)' });
-  res.json({ url: '/images/custom-themes/' + req.file.filename });
+  try {
+    const url = await saveThemeImage(req.file.buffer, req.file.mimetype, req.file.originalname);
+    res.json({ url });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save image: ' + e.message });
+  }
+});
+
+// Serve a theme image stored in Postgres (disk-stored ones are served as
+// static files from /images/custom-themes/ instead)
+app.get('/api/theme-image/:id', async (req, res) => {
+  if (!pool) return res.status(404).end();
+  try {
+    const { rows } = await pool.query('SELECT mimetype, data FROM wp_theme_images WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).end();
+    res.set('Content-Type', rows[0].mimetype || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(rows[0].data);
+  } catch (e) {
+    res.status(500).end();
+  }
 });
 
 // Saved announcements library (reusable text snippets — account numbers, notices, etc.)
-app.get('/api/announcements', (req, res) => {
-  res.json(loadAnnouncements());
+app.get('/api/announcements', async (req, res) => {
+  res.json({ announcements: await loadAnnouncementsList() });
 });
 
-app.post('/api/announcements', (req, res) => {
+app.post('/api/announcements', async (req, res) => {
   const { text } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
-  const data = loadAnnouncements();
-  const newItem = { id: 'ann-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: text.trim() };
-  data.announcements.push(newItem);
-  saveAnnouncements(data);
-  res.json(newItem);
+  try {
+    const newItem = await addAnnouncementItem(text.trim());
+    res.json(newItem);
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save: ' + e.message });
+  }
 });
 
-app.delete('/api/announcements/:id', (req, res) => {
-  const data = loadAnnouncements();
-  const before = data.announcements.length;
-  data.announcements = data.announcements.filter((a) => a.id !== req.params.id);
-  if (data.announcements.length === before) return res.status(404).json({ error: 'Not found' });
-  saveAnnouncements(data);
-  res.json({ ok: true });
+app.delete('/api/announcements/:id', async (req, res) => {
+  try {
+    const deleted = await deleteAnnouncementItem(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not delete: ' + e.message });
+  }
 });
 
 io.on('connection', (socket) => {
@@ -273,4 +423,11 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`Worship Presenter running at http://localhost:${PORT}`));
+initDb()
+  .then(() => {
+    server.listen(PORT, () => console.log(`Worship Presenter running at http://localhost:${PORT}`));
+  })
+  .catch((e) => {
+    console.error('DB init failed, starting anyway with file fallback:', e.message);
+    server.listen(PORT, () => console.log(`Worship Presenter running at http://localhost:${PORT}`));
+  });
