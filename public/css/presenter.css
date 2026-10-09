@@ -374,7 +374,7 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 
 .panel-songs { width: 22%; background: #16162a; border-right: 1px solid #2a2a44; box-shadow: inset -8px 0 16px -16px #000; }
 .panel-slides { width: 38%; background: #121221; border-right: 1px solid #2a2a44; }
-.panel-preview { width: 40%; background: #0b0b1a; display: flex; flex-direction: column; }
+.panel-preview { width: 40%; background: #0b0b1a; display: flex; flex-direction: column; overflow-y: auto; }
 
 .panel h2 {
   font-size: 12px;
@@ -464,14 +464,15 @@ button.danger { background: linear-gradient(180deg, #c23a48 0%, #a3303c 100%); c
 button.danger:hover { background: #c23a48; }
 
 .preview-frame {
-  flex: 1;
-  margin: 10px 16px;
+  width: calc(100% - 32px);
+  margin: 4px 16px;
   border: 2px solid #2a2a44;
   border-radius: 10px;
   overflow: hidden;
   position: relative;
   background: #000;
   aspect-ratio: 16/9;
+  flex-shrink: 0;
 }
 .preview-frame iframe {
   width: 100%;

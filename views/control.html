@@ -94,7 +94,7 @@
 
     <div class="panel-preview">
       <div class="preview-section">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin:16px 16px 0; position:relative;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin:10px 16px 0; position:relative;">
           <h2 style="margin:0;">Preview <span style="font-size:10px; color:#666; font-weight:400;">(staged — not visible yet, true-to-scale miniature of Live)</span></h2>
           <button class="secondary theme-toggle-btn" onclick="toggleThemePopover()" title="Choose a display theme">🎨 Theme</button>
           <div id="theme-popover" class="theme-popover">
@@ -133,14 +133,14 @@
         <div class="preview-frame preview-frame-staged">
           <iframe src="/display?mode=preview"></iframe>
         </div>
-        <div style="padding:10px 16px; display:flex; gap:10px;">
-          <button onclick="goLive()" style="flex:1; font-size:15px; padding:12px;">▶ GO LIVE</button>
+        <div style="padding:4px 16px; display:flex; gap:10px;">
+          <button onclick="goLive()" style="flex:1; font-size:14px; padding:8px;">▶ GO LIVE</button>
           <button class="secondary" onclick="prevSlide()" title="Previous slide (←)">⬅</button>
           <button class="secondary" onclick="nextSlide()" title="Next slide (→)">➡</button>
         </div>
       </div>
       <div class="preview-section">
-        <h2 style="margin:8px 16px 0;">Live <span style="font-size:10px; color:#666; font-weight:400;">(audience sees this)</span></h2>
+        <h2 style="margin:2px 16px 0;">Live <span style="font-size:10px; color:#666; font-weight:400;">(audience sees this)</span></h2>
         <div class="preview-frame">
           <iframe src="/display"></iframe>
         </div>
