@@ -70,7 +70,8 @@ function renderSongList() {
     const delBtn = song.source === 'custom'
       ? `<span onclick="event.stopPropagation(); deleteSong('${song.id}')" style="float:right; color:#a3303c; font-size:12px; cursor:pointer;">✕</span>`
       : '';
-    div.innerHTML = `<div class="song-title">${song.title}${badge}${delBtn}</div><div class="song-artist">${song.artist || ''}</div>`;
+    const schedBtn = `<span onclick="event.stopPropagation(); addWholeSongToSchedule('${song.id}')" class="song-sched-btn" title="Add this whole song to Today's Schedule">+ Sched</span>`;
+    div.innerHTML = `<div class="song-title">${song.title}${badge}${delBtn}</div><div class="song-artist">${song.artist || ''}${schedBtn}</div>`;
     div.onclick = () => selectSong(song);
     container.appendChild(div);
   });
@@ -245,7 +246,7 @@ function saveScheduleToStorage() {
 function renderSchedule() {
   const container = document.getElementById('schedule-list');
   if (schedule.length === 0) {
-    container.innerHTML = '<p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Schedule" on any slide/scripture to build your service order.</p>';
+    container.innerHTML = '<p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Sched" on a song or scripture to build your service order.</p>';
     return;
   }
   container.innerHTML = '';
@@ -278,6 +279,22 @@ function addSongSlideToSchedule(songId, sectionIdx) {
   renderSchedule();
 }
 
+// Adds the ENTIRE song (all its verses/chorus) to the schedule as one row —
+// clicking it in the schedule loads the full slide list ready to click through,
+// rather than forcing the operator to add each verse one at a time.
+function addWholeSongToSchedule(songId) {
+  const song = songs.find((s) => s.id === songId);
+  if (!song) return;
+  const label = song.hymnNumber ? `${song.title} (#${song.hymnNumber})` : song.title;
+  schedule.push({
+    displayTitle: label + (song.artist ? ' — ' + song.artist : ''),
+    stateType: 'whole-song',
+    songId: song.id,
+  });
+  saveScheduleToStorage();
+  renderSchedule();
+}
+
 function addScriptureToSchedule() {
   const ref = document.getElementById('scripture-input').value.trim();
   if (!ref) return;
@@ -290,6 +307,21 @@ function loadScheduleItem(item) {
   if (item.stateType === 'song') {
     currentSongSections = [];
     stageState(item.state);
+  } else if (item.stateType === 'whole-song') {
+    // Load the whole song into the Slides panel (same as clicking it in the
+    // library) and auto-stage its first slide so the operator can start
+    // clicking through or just hit GO LIVE right away.
+    document.querySelectorAll('.schedule-item').forEach((el) => el.classList.remove('active'));
+    selectSong({ id: item.songId });
+    const waitForLoad = setInterval(() => {
+      if (activeSong && activeSong.id === item.songId && currentSongSections.length > 0) {
+        clearInterval(waitForLoad);
+        currentSectionIndex = 0;
+        highlightActiveSlide();
+        stageState(sectionToState(activeSong, currentSongSections[0]));
+      }
+    }, 100);
+    setTimeout(() => clearInterval(waitForLoad), 5000); // safety timeout
   } else if (item.stateType === 'scripture-ref') {
     const statusEl = document.getElementById('scripture-status');
     statusEl.textContent = 'Looking up… ' + item.ref;

@@ -297,7 +297,18 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 .song-item.active, .slide-item.active { border-color: var(--gold); background: #2c2c13; box-shadow: 0 0 0 1px var(--gold); }
 
 .song-item .song-title { font-weight: bold; color: #fff; font-size: 14px; }
-.song-item .song-artist { font-size: 12px; color: #999; }
+.song-item .song-artist { font-size: 12px; color: #999; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.song-sched-btn {
+  font-size: 10px;
+  color: #888;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.song-sched-btn:hover { color: var(--gold); border-color: var(--deep-gold); }
 
 .slide-item .slide-label { font-size: 11px; color: var(--gold); letter-spacing: 1px; font-weight: bold; }
 .slide-item .slide-preview { font-size: 13px; color: #ddd; margin-top: 4px; }
