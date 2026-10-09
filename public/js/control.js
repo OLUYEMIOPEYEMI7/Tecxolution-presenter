@@ -126,6 +126,13 @@ function selectSong(song) {
           highlightActiveSlide();
           stageState(sectionToState(full, section));
         };
+        div.ondblclick = () => {
+          currentSectionIndex = idx;
+          highlightActiveSlide();
+          stageState(sectionToState(full, section));
+          goLive(); // double-click: stage and go live in one motion
+        };
+        div.title = 'Click to stage · double-click to go live instantly';
         container.appendChild(div);
       });
     })
@@ -417,6 +424,8 @@ function renderSchedule() {
         <span onclick="event.stopPropagation(); removeScheduleItem(${idx})">✕</span>
       </span>`;
     div.onclick = () => loadScheduleItem(item);
+    div.ondblclick = () => loadScheduleItem(item, true); // double-click: stage and go live in one motion
+    div.title = 'Click to stage · double-click to go live instantly';
     container.appendChild(div);
   });
 }
@@ -459,10 +468,11 @@ function addScriptureToSchedule() {
   renderSchedule();
 }
 
-function loadScheduleItem(item) {
+function loadScheduleItem(item, thenGoLive) {
   if (item.stateType === 'song') {
     currentSongSections = [];
     stageState(item.state);
+    if (thenGoLive) goLive();
   } else if (item.stateType === 'whole-song') {
     // Load the whole song into the Slides panel (same as clicking it in the
     // library) and auto-stage its first slide so the operator can start
@@ -475,6 +485,7 @@ function loadScheduleItem(item) {
         currentSectionIndex = 0;
         highlightActiveSlide();
         stageState(sectionToState(activeSong, currentSongSections[0]));
+        if (thenGoLive) goLive();
       }
     }, 100);
     setTimeout(() => clearInterval(waitForLoad), 5000); // safety timeout
@@ -491,6 +502,7 @@ function loadScheduleItem(item) {
         statusEl.textContent = 'Staged: ' + data.reference;
         currentSongSections = [];
         stageState({ type: 'scripture', reference: data.reference, text: data.text, translation: data.translation, background: null });
+        if (thenGoLive) goLive();
       });
   }
 }

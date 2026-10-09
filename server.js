@@ -80,9 +80,15 @@ function slugify(title) {
 // ---- Custom songs (persistent) ----
 async function loadCustomSongs() {
   if (pool) {
-    const { rows } = await pool.query('SELECT id, title, artist, sections FROM wp_custom_songs ORDER BY created_at');
-    return rows;
+    try {
+      const { rows } = await pool.query('SELECT id, title, artist, sections FROM wp_custom_songs ORDER BY created_at');
+      return rows;
+    } catch (e) {
+      console.error('DB read failed for custom songs, falling back to local file:', e.message);
+      // fall through to file fallback below
+    }
   }
+  if (!fs.existsSync(songsPath)) return [];
   const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
   return data.songs;
 }
@@ -114,8 +120,12 @@ async function deleteCustomSong(id) {
 // ---- Announcements (persistent) ----
 async function loadAnnouncementsList() {
   if (pool) {
-    const { rows } = await pool.query('SELECT id, text FROM wp_announcements ORDER BY created_at');
-    return rows;
+    try {
+      const { rows } = await pool.query('SELECT id, text FROM wp_announcements ORDER BY created_at');
+      return rows;
+    } catch (e) {
+      console.error('DB read failed for announcements, falling back to local file:', e.message);
+    }
   }
   if (!fs.existsSync(announcementsPath)) return [];
   return JSON.parse(fs.readFileSync(announcementsPath, 'utf8')).announcements;
@@ -198,6 +208,7 @@ app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'di
 app.get('/', (req, res) => res.redirect('/control'));
 
 app.get('/api/songs', async (req, res) => {
+  try {
   // Lightweight metadata only — full lyrics are fetched on demand via /api/songs/:id
   // so the browser doesn't have to download the entire ~3MB hymnal up front.
   // ?q= searches title, artist, hymn number AND full lyric text (keyword search).
@@ -240,13 +251,22 @@ app.get('/api/songs', async (req, res) => {
     sectionCount: s.sections.length,
   }));
   res.json({ songs: light });
+  } catch (e) {
+    console.error('Error in /api/songs:', e.message);
+    res.status(500).json({ error: 'Could not load songs', songs: [] });
+  }
 });
 
 app.get('/api/songs/:id', async (req, res) => {
-  const all = await getAllSongsFull();
-  const song = all.find((s) => s.id === req.params.id);
-  if (!song) return res.status(404).json({ error: 'Song not found' });
-  res.json(song);
+  try {
+    const all = await getAllSongsFull();
+    const song = all.find((s) => s.id === req.params.id);
+    if (!song) return res.status(404).json({ error: 'Song not found' });
+    res.json(song);
+  } catch (e) {
+    console.error('Error in /api/songs/:id:', e.message);
+    res.status(500).json({ error: 'Could not load song' });
+  }
 });
 
 // Add a new custom song
