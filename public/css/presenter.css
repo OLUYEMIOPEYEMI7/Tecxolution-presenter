@@ -46,6 +46,8 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
   padding-bottom: 6vh;
   text-align: center;
   color: #fff;
+  transform-origin: bottom center;
+  transition: transform 0.15s ease;
 }
 
 .lyric-line {

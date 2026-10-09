@@ -42,7 +42,30 @@ function render(state) {
     stageContent.innerHTML = '';
     stageLabel.textContent = '';
   }
+
+  fitContent();
 }
+
+// Shrinks the content block (as a whole, via transform:scale so nothing
+// stretches) until it fits the stage vertically — long verses must never
+// run off the top of the screen. Anchored bottom-center so it shrinks
+// toward the same spot the layout is already anchored to.
+function fitContent() {
+  stageContent.style.transform = 'scale(1)';
+  // Force a synchronous layout read before measuring.
+  void stageContent.offsetHeight;
+
+  const labelSpace = stageLabel.textContent ? stageLabel.offsetHeight + 40 : 20;
+  const available = stage.clientHeight * 0.92 - labelSpace;
+  const needed = stageContent.scrollHeight;
+
+  if (needed > available && needed > 0) {
+    const scale = Math.max(0.25, available / needed);
+    stageContent.style.transform = `scale(${scale})`;
+  }
+}
+
+window.addEventListener('resize', fitContent);
 
 function escapeHtml(str) {
   const div = document.createElement('div');
