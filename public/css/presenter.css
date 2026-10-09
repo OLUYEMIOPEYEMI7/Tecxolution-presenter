@@ -93,6 +93,71 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 }
 .stage-label:empty::before { display: none; }
 
+/* ============== Display Themes (several backgrounds + Blank) ============== */
+/* "photo" (default) keeps each song/hymn's own background image untouched.
+   Every other theme replaces it with a flat gradient — applied via a
+   theme-* class on .stage, chosen by the operator and sent in the broadcast
+   state so Preview and Live always show the same theme. */
+.stage.theme-classic { background: linear-gradient(165deg, #1b1b35 0%, #0b0b1a 60%, #06060d 100%); }
+.stage.theme-royal { background: linear-gradient(165deg, #3b2064 0%, #1c0f36 60%, #0d0718 100%); }
+.stage.theme-crimson { background: linear-gradient(165deg, #5c0f1c 0%, #30060d 60%, #140204 100%); }
+.stage.theme-emerald { background: linear-gradient(165deg, #0f4a30 0%, #082818 60%, #03120a 100%); }
+.stage.theme-midnight { background: linear-gradient(165deg, #0d2347 0%, #081530 60%, #030a1a 100%); }
+.stage.theme-sunset { background: linear-gradient(135deg, #6b2d0a 0%, #3d1708 55%, #150704 100%); }
+.stage.theme-blank { background: #000; }
+
+.stage.theme-pure { background: linear-gradient(165deg, #fdf6e3 0%, #f3e8c8 100%); }
+.stage.theme-pure .stage-overlay { background: transparent; }
+.stage.theme-pure .lyric-line { color: #241a00; text-shadow: none; }
+.stage.theme-pure .lyric-line .response { color: #9a6a00; }
+.stage.theme-pure .finale-banner { color: #9a6a00; text-shadow: none; }
+.stage.theme-pure .scripture-ref { color: #9a6a00; }
+.stage.theme-pure .scripture-text { color: #241a00; text-shadow: none; }
+.stage.theme-pure .scripture-translation { color: #6b5d3f; }
+.stage.theme-pure .stage-label { color: #6b5d3f; }
+.stage.theme-pure .stage-label::before { background: #9a6a00; }
+.stage.theme-pure .standby-title { color: #9a6a00; }
+.stage.theme-pure .standby-subtitle { color: #6b5d3f; }
+
+/* Theme picker swatches (control room only) */
+.theme-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.theme-swatch {
+  position: relative;
+  height: 40px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  box-shadow: none;
+  transition: 0.15s;
+}
+.theme-swatch:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.4); }
+.theme-swatch.active { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(242,201,76,0.3); }
+.theme-swatch .swatch-label {
+  position: absolute;
+  bottom: 2px; left: 0; right: 0;
+  font-size: 8px;
+  text-align: center;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.theme-swatch.swatch-photo { background: linear-gradient(135deg, #444 25%, #666 25%, #666 50%, #444 50%, #444 75%, #666 75%); background-size: 10px 10px; }
+.theme-swatch.swatch-classic { background: linear-gradient(165deg, #1b1b35, #06060d); }
+.theme-swatch.swatch-royal { background: linear-gradient(165deg, #3b2064, #0d0718); }
+.theme-swatch.swatch-crimson { background: linear-gradient(165deg, #5c0f1c, #140204); }
+.theme-swatch.swatch-emerald { background: linear-gradient(165deg, #0f4a30, #03120a); }
+.theme-swatch.swatch-midnight { background: linear-gradient(165deg, #0d2347, #030a1a); }
+.theme-swatch.swatch-sunset { background: linear-gradient(135deg, #6b2d0a, #150704); }
+.theme-swatch.swatch-pure { background: linear-gradient(165deg, #fdf6e3, #f3e8c8); }
+.theme-swatch.swatch-pure .swatch-label { color: #6b5d3f; text-shadow: none; }
+.theme-swatch.swatch-blank { background: #000; border-color: #333; }
+
 .scripture-ref {
   font-size: clamp(22px, 3vw, 34px);
   font-weight: bold;

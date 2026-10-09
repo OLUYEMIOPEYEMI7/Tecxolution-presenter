@@ -155,14 +155,31 @@ function sectionToState(song, section) {
 // proportional miniature of Live, not an approximation.
 let currentSongSections = [];
 let currentSectionIndex = -1;
+let currentTheme = localStorage.getItem('wp_theme') || 'photo';
+let lastStagedState = null;
+
+function withTheme(state) {
+  return { ...state, theme: currentTheme };
+}
 
 function stageState(state) {
-  socket.emit('stage', state);
+  lastStagedState = state;
+  socket.emit('stage', withTheme(state));
 }
 
 function goLive() {
   socket.emit('golive');
 }
+
+document.getElementById('theme-picker').addEventListener('click', (e) => {
+  const swatch = e.target.closest('.theme-swatch');
+  if (!swatch) return;
+  currentTheme = swatch.dataset.theme;
+  localStorage.setItem('wp_theme', currentTheme);
+  document.querySelectorAll('.theme-swatch').forEach((s) => s.classList.toggle('active', s === swatch));
+  if (lastStagedState) stageState(lastStagedState); // re-stage with the new theme so it's visible right away
+});
+document.querySelectorAll('.theme-swatch').forEach((s) => s.classList.toggle('active', s.dataset.theme === currentTheme));
 
 function nextSlide() {
   if (!currentSongSections.length) return;
@@ -374,13 +391,13 @@ function projectScriptureByRef(ref) {
         return false;
       }
       statusEl.textContent = 'Projected: ' + data.reference;
-      socket.emit('project', {
+      socket.emit('project', withTheme({
         type: 'scripture',
         reference: data.reference,
         text: data.text,
         translation: data.translation,
         background: null,
-      });
+      }));
       return true;
     })
     .catch(() => {

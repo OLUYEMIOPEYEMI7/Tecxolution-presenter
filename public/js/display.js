@@ -6,9 +6,12 @@ const stageContent = document.getElementById('stage-content');
 const stageLabel = document.getElementById('stage-label');
 
 function render(state) {
-  stage.className = 'stage ' + (state.type || 'blank');
+  const theme = state.theme || 'photo';
+  stage.className = 'stage ' + (state.type || 'blank') + ' theme-' + theme;
 
-  if (state.background) {
+  // "photo" keeps each song's own background image; any other theme is a
+  // flat color design and ignores the per-song image entirely.
+  if (theme === 'photo' && state.background) {
     stageBg.style.backgroundImage = `url('${state.background}')`;
     stageBg.style.opacity = 1;
   } else {
