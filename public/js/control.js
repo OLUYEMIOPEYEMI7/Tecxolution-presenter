@@ -354,7 +354,7 @@ fetch('/api/bible-versions')
     sel.value = 'kjv';
   });
 
-function stageScripture() {
+function stageScripture(thenGoLive) {
   const ref = document.getElementById('scripture-input').value.trim();
   if (!ref) return;
   const statusEl = document.getElementById('scripture-status');
@@ -366,7 +366,7 @@ function stageScripture() {
         statusEl.textContent = 'Not found: ' + data.error;
         return;
       }
-      statusEl.textContent = 'Staged: ' + data.reference + ' (click GO LIVE)';
+      statusEl.textContent = thenGoLive ? 'Live: ' + data.reference : 'Staged: ' + data.reference + ' (click GO LIVE)';
       currentSongSections = [];
       stageState({
         type: 'scripture',
@@ -375,15 +375,16 @@ function stageScripture() {
         translation: data.translation,
         background: null,
       });
+      if (thenGoLive) goLive();
     })
     .catch((e) => {
       statusEl.textContent = 'Error: ' + e.message;
     });
 }
 
-function quickRef(ref) {
+function quickRef(ref, thenGoLive) {
   document.getElementById('scripture-input').value = ref;
-  stageScripture();
+  stageScripture(thenGoLive);
 }
 
 function clearStage() {
