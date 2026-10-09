@@ -375,6 +375,20 @@ button.danger:hover { background: #c23a48; }
   position: absolute;
   inset: 0;
 }
+
+/* Preview pane is a small box, not a fullscreen projector — the display
+   styles above use vw units sized for a real screen, so scope fixed,
+   proportionally smaller sizes here instead of letting them inherit vw. */
+#preview-stage .stage-content { padding-bottom: 4%; }
+#preview-stage .lyric-line { font-size: 13px !important; line-height: 1.25 !important; margin: 0.2em 0 !important; }
+#preview-stage .finale-banner { font-size: 17px !important; margin-top: 0.3em !important; }
+#preview-stage .scripture-ref { font-size: 11px !important; margin-bottom: 0.4em !important; }
+#preview-stage .scripture-text { font-size: 14px !important; line-height: 1.3 !important; }
+#preview-stage .scripture-translation { font-size: 8px !important; margin-top: 0.4em !important; }
+#preview-stage .stage-label { font-size: 7px !important; bottom: 4% !important; letter-spacing: 2px !important; }
+#preview-stage .stage-label::before { width: 30px !important; height: 1px !important; margin-bottom: 4px !important; }
+#preview-stage .standby-title { font-size: 13px !important; letter-spacing: 3px !important; }
+#preview-stage .standby-subtitle { font-size: 7px !important; }
 .preview-section {
   display: flex;
   flex-direction: column;
