@@ -4,6 +4,9 @@ const stage = document.getElementById('stage');
 const stageBg = document.getElementById('stage-bg');
 const stageContent = document.getElementById('stage-content');
 const stageLabel = document.getElementById('stage-label');
+const tickerBar = document.getElementById('ticker-bar');
+const tickerText = document.getElementById('ticker-text');
+let tickerActive = false;
 
 function render(state) {
   const theme = state.theme || 'photo';
@@ -56,7 +59,8 @@ function fitContent() {
   void stageContent.offsetHeight;
 
   const labelSpace = stageLabel.textContent ? stageLabel.offsetHeight + 40 : 20;
-  const available = stage.clientHeight * 0.92 - labelSpace;
+  const tickerSpace = tickerActive ? stage.clientHeight * 0.09 : 0;
+  const available = stage.clientHeight * 0.92 - labelSpace - tickerSpace;
   const needed = stageContent.scrollHeight;
 
   if (needed > available && needed > 0) {
@@ -67,6 +71,24 @@ function fitContent() {
 
 window.addEventListener('resize', fitContent);
 
+// Scrolling lower-third ticker (EasyWorship-style) — independent of the main
+// slide, so an account number or notice can scroll continuously underneath
+// whatever is being projected without interrupting it.
+function renderTicker(state) {
+  tickerActive = !!(state.active && state.text);
+  if (!tickerActive) {
+    tickerBar.classList.remove('on');
+    fitContent();
+    return;
+  }
+  tickerText.textContent = state.text;
+  // Speed scales with text length so longer messages don't zoom by too fast.
+  const duration = Math.max(10, state.text.length * 0.22);
+  tickerText.style.animationDuration = duration + 's';
+  tickerBar.classList.add('on');
+  fitContent();
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -75,3 +97,4 @@ function escapeHtml(str) {
 
 const isPreview = new URLSearchParams(location.search).get('mode') === 'preview';
 socket.on(isPreview ? 'preview-state' : 'live-state', render);
+socket.on('ticker-state', renderTicker);

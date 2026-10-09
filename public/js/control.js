@@ -222,21 +222,72 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ---- Add a custom theme (name + 2-color gradient) ----
+// ---- Add a custom theme (name + 2-color gradient OR an uploaded image) ----
+let themeMode = 'gradient';
+let uploadedThemeImageUrl = null;
+
 function openAddThemeForm(show = true) {
   document.getElementById('add-theme-form').style.display = show ? 'block' : 'none';
+  if (show) setThemeMode('gradient');
 }
+
+function setThemeMode(mode) {
+  themeMode = mode;
+  document.querySelectorAll('.theme-mode-tab').forEach((t) => t.classList.toggle('active', t.dataset.mode === mode));
+  document.getElementById('theme-mode-gradient').style.display = mode === 'gradient' ? 'block' : 'none';
+  document.getElementById('theme-mode-image').style.display = mode === 'image' ? 'block' : 'none';
+}
+
+document.getElementById('new-theme-image-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  uploadedThemeImageUrl = null;
+  if (!file) return;
+  const preview = document.getElementById('new-theme-image-preview');
+  const reader = new FileReader();
+  reader.onload = () => {
+    preview.src = reader.result;
+    preview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
 
 function saveCustomTheme() {
   const name = document.getElementById('new-theme-name').value.trim();
-  const c1 = document.getElementById('new-theme-color1').value;
-  const c2 = document.getElementById('new-theme-color2').value;
   if (!name) {
     alert('Please give your theme a name.');
     return;
   }
+
+  if (themeMode === 'image') {
+    const fileInput = document.getElementById('new-theme-image-file');
+    const file = fileInput.files[0];
+    if (!file) {
+      alert('Please choose an image file first.');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('image', file);
+    fetch('/api/theme-image', { method: 'POST', body: formData })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) {
+          alert('Upload failed: ' + data.error);
+          return;
+        }
+        finishSavingTheme(name, `url('${data.url}') center center / cover no-repeat`);
+        fileInput.value = '';
+        document.getElementById('new-theme-image-preview').style.display = 'none';
+      })
+      .catch((e) => alert('Upload failed: ' + e.message));
+  } else {
+    const c1 = document.getElementById('new-theme-color1').value;
+    const c2 = document.getElementById('new-theme-color2').value;
+    finishSavingTheme(name, `linear-gradient(165deg, ${c1} 0%, ${c2} 100%)`);
+  }
+}
+
+function finishSavingTheme(name, css) {
   const id = 'custom-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
-  const css = `linear-gradient(165deg, ${c1} 0%, ${c2} 100%)`;
   customThemes.push({ id, name, css });
   localStorage.setItem('wp_custom_themes', JSON.stringify(customThemes));
   renderCustomThemeSwatches();
@@ -633,4 +684,83 @@ function submitNewSong() {
     .catch((e) => {
       statusEl.textContent = 'Error: ' + e.message;
     });
+}
+
+// ================= Announcements / Scrolling Ticker =================
+let tickerActive = false;
+
+function toggleTicker() {
+  tickerActive = !tickerActive;
+  updateTickerBtn();
+  sendTickerUpdate();
+}
+
+function updateTickerBtn() {
+  const btn = document.getElementById('ticker-toggle-btn');
+  btn.textContent = tickerActive ? '■ Stop Scrolling' : '▶ Start Scrolling';
+  btn.classList.toggle('danger', tickerActive);
+}
+
+function sendTickerUpdate() {
+  const text = document.getElementById('ticker-input').value.trim();
+  socket.emit('ticker-update', { active: tickerActive && !!text, text });
+}
+
+// Update the live ticker text as the operator edits it, without needing to
+// stop/restart scrolling (debounced so it doesn't spam on every keystroke).
+let tickerEditDebounce = null;
+document.getElementById('ticker-input').addEventListener('input', () => {
+  if (!tickerActive) return;
+  clearTimeout(tickerEditDebounce);
+  tickerEditDebounce = setTimeout(sendTickerUpdate, 400);
+});
+
+function saveAnnouncement() {
+  const text = document.getElementById('ticker-input').value.trim();
+  if (!text) {
+    alert('Type a message first, then Save.');
+    return;
+  }
+  fetch('/api/announcements', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+    .then((r) => r.json())
+    .then(() => loadAnnouncementsList());
+}
+
+function loadAnnouncementsList() {
+  fetch('/api/announcements')
+    .then((r) => r.json())
+    .then((data) => renderAnnouncementsList(data.announcements || []));
+}
+loadAnnouncementsList();
+
+function renderAnnouncementsList(list) {
+  const container = document.getElementById('announcements-list');
+  if (list.length === 0) {
+    container.innerHTML = '<p style="color:#666; font-size:11px; margin:0;">No saved announcements yet — type one above and click "+ Save".</p>';
+    return;
+  }
+  container.innerHTML = list.map((a) => `
+    <span class="announcement-chip" onclick="loadAnnouncementIntoTicker('${a.id}')" title="Click to load into the ticker box">
+      ${escapeHtmlLocal(a.text.slice(0, 28))}${a.text.length > 28 ? '…' : ''}
+      <span onclick="event.stopPropagation(); deleteAnnouncement('${a.id}')" style="margin-left:6px; color:#a3303c;">✕</span>
+    </span>
+  `).join('');
+  window._announcementsCache = list;
+}
+
+function loadAnnouncementIntoTicker(id) {
+  const item = (window._announcementsCache || []).find((a) => a.id === id);
+  if (!item) return;
+  document.getElementById('ticker-input').value = item.text;
+  if (tickerActive) sendTickerUpdate();
+}
+
+function deleteAnnouncement(id) {
+  fetch('/api/announcements/' + id, { method: 'DELETE' })
+    .then((r) => r.json())
+    .then(() => loadAnnouncementsList());
 }

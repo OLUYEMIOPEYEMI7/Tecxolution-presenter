@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const multer = require('multer');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,8 +13,23 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+const customThemeImageDir = path.join(__dirname, 'public', 'images', 'custom-themes');
+fs.mkdirSync(customThemeImageDir, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: customThemeImageDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext);
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+
 const songsPath = path.join(__dirname, 'data', 'songs.json');
 const hymnsPath = path.join(__dirname, 'data', 'hymns.json');
+const announcementsPath = path.join(__dirname, 'data', 'announcements.json');
 
 function loadSongs() {
   return JSON.parse(fs.readFileSync(songsPath, 'utf8'));
@@ -25,6 +41,15 @@ function saveSongs(data) {
 
 function loadHymns() {
   return JSON.parse(fs.readFileSync(hymnsPath, 'utf8'));
+}
+
+function loadAnnouncements() {
+  if (!fs.existsSync(announcementsPath)) return { announcements: [] };
+  return JSON.parse(fs.readFileSync(announcementsPath, 'utf8'));
+}
+
+function saveAnnouncements(data) {
+  fs.writeFileSync(announcementsPath, JSON.stringify(data, null, 2));
 }
 
 const rccgHymnalPath = path.join(__dirname, 'data', 'rccg-hymnal.json');
@@ -66,6 +91,7 @@ function getAllSongsFull() {
 // not an approximation.
 let liveState = { type: 'blank' };
 let previewState = { type: 'blank' };
+let tickerState = { active: false, text: '' };
 
 app.get('/control', (req, res) => res.sendFile(path.join(__dirname, 'views', 'control.html')));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'display.html')));
@@ -179,10 +205,41 @@ app.get('/api/scripture', (req, res) => {
   }).on('error', (e) => res.status(502).json({ error: e.message }));
 });
 
+// Upload an image to use as a custom theme background
+app.post('/api/theme-image', upload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded (must be an image file, max 8MB)' });
+  res.json({ url: '/images/custom-themes/' + req.file.filename });
+});
+
+// Saved announcements library (reusable text snippets — account numbers, notices, etc.)
+app.get('/api/announcements', (req, res) => {
+  res.json(loadAnnouncements());
+});
+
+app.post('/api/announcements', (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
+  const data = loadAnnouncements();
+  const newItem = { id: 'ann-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: text.trim() };
+  data.announcements.push(newItem);
+  saveAnnouncements(data);
+  res.json(newItem);
+});
+
+app.delete('/api/announcements/:id', (req, res) => {
+  const data = loadAnnouncements();
+  const before = data.announcements.length;
+  data.announcements = data.announcements.filter((a) => a.id !== req.params.id);
+  if (data.announcements.length === before) return res.status(404).json({ error: 'Not found' });
+  saveAnnouncements(data);
+  res.json({ ok: true });
+});
+
 io.on('connection', (socket) => {
   // Catch up any newly-connected display/control client on both channels
   socket.emit('live-state', liveState);
   socket.emit('preview-state', previewState);
+  socket.emit('ticker-state', tickerState);
 
   // Stage content into Preview only — does not touch what the audience sees
   socket.on('stage', (payload) => {
@@ -205,6 +262,13 @@ io.on('connection', (socket) => {
   socket.on('clear', () => {
     liveState = { type: 'blank' };
     io.emit('live-state', liveState);
+  });
+
+  // Scrolling ticker (lower-third banner) — independent of the main slide,
+  // shown on Live (and Preview, for the operator to check it before airing).
+  socket.on('ticker-update', (payload) => {
+    tickerState = { active: !!payload.active, text: payload.text || '' };
+    io.emit('ticker-state', tickerState);
   });
 });
 

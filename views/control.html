@@ -70,6 +70,19 @@
         <p id="scripture-status" style="font-size:12px; color:#999; margin-top:6px;"></p>
       </div>
 
+      <h2 style="margin-top:24px;">📢 Announcements / Ticker</h2>
+      <div class="scripture-box">
+        <p style="font-size:11px; color:#888; margin:0 0 8px;">
+          Type a notice, account number, or any message — it scrolls continuously along the bottom of the screen, under whatever is being projected.
+        </p>
+        <textarea id="ticker-input" rows="2" placeholder="e.g. Account: 1234567890 - GTBank (Building Fund) • Thanksgiving Service next Sunday 9AM" style="width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px; font-family:inherit; resize:vertical;"></textarea>
+        <div style="display:flex; gap:8px; margin:8px 0;">
+          <button id="ticker-toggle-btn" onclick="toggleTicker()">▶ Start Scrolling</button>
+          <button class="secondary" onclick="saveAnnouncement()">+ Save</button>
+        </div>
+        <div id="announcements-list" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
+
       <h2 style="margin-top:24px;">🎙 Voice Detect (Beta)</h2>
       <div class="scripture-box">
         <div style="display:flex; gap:8px; margin-bottom:10px;">
@@ -119,9 +132,20 @@
             </div>
             <div id="add-theme-form" class="add-theme-form" style="display:none;">
               <input type="text" id="new-theme-name" placeholder="Theme name (e.g. Christmas)" class="form-input" style="margin-bottom:8px; font-size:12px; padding:7px 10px;" />
-              <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
-                <label style="font-size:11px; color:#999;">From <input type="color" id="new-theme-color1" value="#1b1b35" style="vertical-align:middle;"></label>
-                <label style="font-size:11px; color:#999;">To <input type="color" id="new-theme-color2" value="#06060d" style="vertical-align:middle;"></label>
+              <div class="theme-mode-tabs">
+                <button type="button" class="theme-mode-tab active" data-mode="gradient" onclick="setThemeMode('gradient')">Gradient</button>
+                <button type="button" class="theme-mode-tab" data-mode="image" onclick="setThemeMode('image')">My Own Image</button>
+              </div>
+              <div id="theme-mode-gradient">
+                <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                  <label style="font-size:11px; color:#999;">From <input type="color" id="new-theme-color1" value="#1b1b35" style="vertical-align:middle;"></label>
+                  <label style="font-size:11px; color:#999;">To <input type="color" id="new-theme-color2" value="#06060d" style="vertical-align:middle;"></label>
+                </div>
+              </div>
+              <div id="theme-mode-image" style="display:none; margin-bottom:10px;">
+                <input type="file" id="new-theme-image-file" accept="image/*" style="font-size:11px; color:#999; width:100%;" />
+                <p style="font-size:10px; color:#666; margin:6px 0 0;">JPG or PNG, up to 8MB. It'll be stretched to fill the screen behind the lyrics.</p>
+                <img id="new-theme-image-preview" style="display:none; max-width:100%; max-height:70px; margin-top:6px; border-radius:4px;" />
               </div>
               <div style="display:flex; gap:8px;">
                 <button onclick="saveCustomTheme()" style="flex:1; font-size:12px; padding:7px;">Save Theme</button>
