@@ -9,39 +9,84 @@
           "label": "VERSE 1",
           "background": "/images/01_broken_world.jpg",
           "pairs": [
-            ["Do you feel the world is broken?", "We do."],
-            ["Do you feel the shadows deepen?", "We do."],
-            ["But all the dark won't stop the light from getting through.", ""],
-            ["Do you wish you could see it all made new?", "We do."]
+            [
+              "Do you feel the world is broken?",
+              "We do."
+            ],
+            [
+              "Do you feel the shadows deepen?",
+              "We do."
+            ],
+            [
+              "But all the dark won't stop the light from getting through.",
+              ""
+            ],
+            [
+              "Do you wish you could see it all made new?",
+              "We do."
+            ]
           ]
         },
         {
           "label": "VERSE 2",
           "background": "/images/02_new_creation.jpg",
           "pairs": [
-            ["Is all creation groaning?", "It is."],
-            ["Is a new creation coming?", "It is."],
-            ["Is the glory of the Lord the light within our midst?", "It is."],
-            ["Is it good that we remind ourselves of this?", "It is."]
+            [
+              "Is all creation groaning?",
+              "It is."
+            ],
+            [
+              "Is a new creation coming?",
+              "It is."
+            ],
+            [
+              "Is the glory of the Lord the light within our midst?",
+              "It is."
+            ],
+            [
+              "Is it good that we remind ourselves of this?",
+              "It is."
+            ]
           ]
         },
         {
           "label": "CHORUS",
           "background": "/images/03_lion_lamb_scroll.jpg",
           "pairs": [
-            ["Is anyone worthy? Is anyone whole?", ""],
-            ["Is anyone able to break the seal and open the scroll?", ""],
-            ["The Lion of Judah, who conquered the grave \u2014", ""],
-            ["David's Root, the Lamb who died to ransom the slave.", ""]
+            [
+              "Is anyone worthy? Is anyone whole?",
+              ""
+            ],
+            [
+              "Is anyone able to break the seal and open the scroll?",
+              ""
+            ],
+            [
+              "The Lion of Judah, who conquered the grave —",
+              ""
+            ],
+            [
+              "David's Root, the Lamb who died to ransom the slave.",
+              ""
+            ]
           ]
         },
         {
           "label": "REFRAIN",
           "background": "/images/04_christ_glory.jpg",
           "pairs": [
-            ["Is He worthy? Is He worthy?", ""],
-            ["Of all blessing, and honor, and glory?", ""],
-            ["Is He worthy of this?", ""]
+            [
+              "Is He worthy? Is He worthy?",
+              ""
+            ],
+            [
+              "Of all blessing, and honor, and glory?",
+              ""
+            ],
+            [
+              "Is He worthy of this?",
+              ""
+            ]
           ],
           "finale": "HE IS."
         },
@@ -49,28 +94,58 @@
           "label": "VERSE 3",
           "background": "/images/05_dove_presence.jpg",
           "pairs": [
-            ["Does the Father truly love us?", "He does."],
-            ["Does the Spirit move among us?", "He does."],
-            ["Does Jesus our Messiah hold forever those He loves?", "He does."],
-            ["Does our God intend to dwell again with us?", "He does."]
+            [
+              "Does the Father truly love us?",
+              "He does."
+            ],
+            [
+              "Does the Spirit move among us?",
+              "He does."
+            ],
+            [
+              "Does Jesus our Messiah hold forever those He loves?",
+              "He does."
+            ],
+            [
+              "Does our God intend to dwell again with us?",
+              "He does."
+            ]
           ]
         },
         {
           "label": "POST-CHORUS",
           "background": "/images/06_every_nation.jpg",
           "pairs": [
-            ["From every people and tribe,", ""],
-            ["Every nation and tongue \u2014", ""],
-            ["He has made us a kingdom and priests to God,", ""],
-            ["To reign with the Son.", ""]
+            [
+              "From every people and tribe,",
+              ""
+            ],
+            [
+              "Every nation and tongue —",
+              ""
+            ],
+            [
+              "He has made us a kingdom and priests to God,",
+              ""
+            ],
+            [
+              "To reign with the Son.",
+              ""
+            ]
           ]
         },
         {
           "label": "FINAL DECLARATION",
           "background": "/images/07_final_throne.jpg",
           "pairs": [
-            ["Is He worthy? Is He worthy?", ""],
-            ["He is worthy. He is worthy.", ""]
+            [
+              "Is He worthy? Is He worthy?",
+              ""
+            ],
+            [
+              "He is worthy. He is worthy.",
+              ""
+            ]
           ],
           "finale": "HE IS WORTHY OF IT ALL."
         }

@@ -13,9 +13,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 const songsPath = path.join(__dirname, 'data', 'songs.json');
+const hymnsPath = path.join(__dirname, 'data', 'hymns.json');
 
 function loadSongs() {
   return JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+}
+
+function saveSongs(data) {
+  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
+}
+
+function loadHymns() {
+  return JSON.parse(fs.readFileSync(hymnsPath, 'utf8'));
+}
+
+function slugify(title) {
+  return 'song-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
 }
 
 // Current live state, so a newly-opened display catches up instantly
@@ -26,7 +39,39 @@ app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'di
 app.get('/', (req, res) => res.redirect('/control'));
 
 app.get('/api/songs', (req, res) => {
-  res.json(loadSongs());
+  const custom = loadSongs().songs.map((s) => ({ ...s, source: 'custom' }));
+  const hymns = loadHymns().hymns.map((h) => ({ ...h, source: 'hymn' }));
+  res.json({ songs: [...custom, ...hymns] });
+});
+
+// Add a new custom song
+app.post('/api/songs', (req, res) => {
+  const { title, artist, sections } = req.body;
+  if (!title || !Array.isArray(sections) || sections.length === 0) {
+    return res.status(400).json({ error: 'title and at least one section are required' });
+  }
+  const data = loadSongs();
+  const newSong = {
+    id: slugify(title),
+    title,
+    artist: artist || '',
+    sections,
+  };
+  data.songs.push(newSong);
+  saveSongs(data);
+  res.json(newSong);
+});
+
+// Delete a custom song (hymns in the compendium cannot be deleted this way)
+app.delete('/api/songs/:id', (req, res) => {
+  const data = loadSongs();
+  const before = data.songs.length;
+  data.songs = data.songs.filter((s) => s.id !== req.params.id);
+  if (data.songs.length === before) {
+    return res.status(404).json({ error: 'Song not found (hymns cannot be deleted)' });
+  }
+  saveSongs(data);
+  res.json({ ok: true });
 });
 
 // Scripture lookup — proxies bible-api.com (free, no key required)
