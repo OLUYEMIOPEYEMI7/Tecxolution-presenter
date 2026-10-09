@@ -63,6 +63,8 @@ function deleteSong(id) {
 
 function selectSong(song) {
   activeSong = song;
+  currentSongSections = song.sections;
+  currentSectionIndex = -1;
   document.querySelectorAll('.song-item').forEach((el) => el.classList.remove('active'));
   renderSongList();
   [...document.querySelectorAll('.song-item')].find((el, i) => songs[i].id === song.id)?.classList.add('active');
@@ -73,27 +75,126 @@ function selectSong(song) {
     const div = document.createElement('div');
     div.className = 'slide-item';
     const previewText = section.pairs.map((p) => p[0]).join(' ').slice(0, 70);
-    div.innerHTML = `<div class="slide-label">${section.label}</div><div class="slide-preview">${previewText}…</div>`;
+    div.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div style="flex:1;"><div class="slide-label">${section.label}</div><div class="slide-preview">${previewText}…</div></div>
+        <span onclick="event.stopPropagation(); addSongSlideToSchedule('${song.id}', ${idx})" style="font-size:10px; color:#888; border:1px solid #444; border-radius:4px; padding:2px 6px; margin-left:8px; white-space:nowrap;">+ Sched</span>
+      </div>`;
     div.onclick = () => {
-      document.querySelectorAll('.slide-item').forEach((el) => el.classList.remove('active'));
-      div.classList.add('active');
-      projectSong(song, section);
+      currentSectionIndex = idx;
+      highlightActiveSlide();
+      loadIntoPreview(sectionToState(song, section));
     };
     container.appendChild(div);
   });
 }
 
-function projectSong(song, section) {
-  socket.emit('project', {
+function highlightActiveSlide() {
+  document.querySelectorAll('.slide-item').forEach((el, i) => el.classList.toggle('active', i === currentSectionIndex));
+}
+
+function sectionToState(song, section) {
+  return {
     type: 'song',
     label: section.label,
     pairs: section.pairs,
     finale: section.finale || null,
     background: section.background,
-  });
+    _displayTitle: `${song.title} — ${section.label}`,
+  };
 }
 
-function lookupScripture() {
+// ================= Preview / Live separation (EasyWorship-style) =================
+let previewState = null;
+let currentSongSections = [];
+let currentSectionIndex = -1;
+
+function loadIntoPreview(state) {
+  previewState = state;
+  renderStage(state, 'preview-stage', 'preview-stage-bg', 'preview-stage-content', 'preview-stage-label');
+}
+
+function renderStage(state, stageId, bgId, contentId, labelId) {
+  const stage = document.getElementById(stageId);
+  const bg = document.getElementById(bgId);
+  const content = document.getElementById(contentId);
+  const label = document.getElementById(labelId);
+
+  stage.className = 'stage ' + (state && state.type ? state.type : 'blank');
+  if (state && state.background) {
+    bg.style.backgroundImage = `url('${state.background}')`;
+    bg.style.opacity = 1;
+  } else {
+    bg.style.opacity = 0;
+  }
+
+  if (!state) {
+    content.innerHTML = '';
+    label.textContent = '';
+    return;
+  }
+
+  if (state.type === 'song') {
+    let html = '';
+    (state.pairs || []).forEach(([call, response]) => {
+      html += `<div class="lyric-line">${escapeHtmlLocal(call)}`;
+      if (response) html += ` <span class="response">${escapeHtmlLocal(response)}</span>`;
+      html += `</div>`;
+    });
+    if (state.finale) html += `<div class="finale-banner">${escapeHtmlLocal(state.finale)}</div>`;
+    content.innerHTML = html;
+    label.textContent = state.label || '';
+  } else if (state.type === 'scripture') {
+    content.innerHTML = `
+      <div class="scripture-ref">${escapeHtmlLocal(state.reference || '')}</div>
+      <div class="scripture-text">${escapeHtmlLocal(state.text || '')}</div>
+      <div class="scripture-translation">${escapeHtmlLocal(state.translation || '')}</div>`;
+    label.textContent = '';
+  } else {
+    content.innerHTML = '';
+    label.textContent = '';
+  }
+}
+
+function escapeHtmlLocal(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+function goLive() {
+  if (!previewState) return;
+  socket.emit('project', previewState);
+}
+
+function nextSlide() {
+  if (!currentSongSections.length) return;
+  if (currentSectionIndex < currentSongSections.length - 1) {
+    currentSectionIndex++;
+    highlightActiveSlide();
+    loadIntoPreview(sectionToState(activeSong, currentSongSections[currentSectionIndex]));
+  }
+}
+
+function prevSlide() {
+  if (!currentSongSections.length) return;
+  if (currentSectionIndex > 0) {
+    currentSectionIndex--;
+    highlightActiveSlide();
+    loadIntoPreview(sectionToState(activeSong, currentSongSections[currentSectionIndex]));
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+  if (e.key === 'ArrowRight') { nextSlide(); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft') { prevSlide(); e.preventDefault(); }
+  else if (e.key === 'Enter' || e.key === ' ') { goLive(); e.preventDefault(); }
+  else if (e.key === 'Escape') { clearStage(); e.preventDefault(); }
+});
+
+function stageScripture() {
   const ref = document.getElementById('scripture-input').value.trim();
   if (!ref) return;
   const statusEl = document.getElementById('scripture-status');
@@ -105,8 +206,9 @@ function lookupScripture() {
         statusEl.textContent = 'Not found: ' + data.error;
         return;
       }
-      statusEl.textContent = 'Projected: ' + data.reference;
-      socket.emit('project', {
+      statusEl.textContent = 'Staged: ' + data.reference + ' (click GO LIVE)';
+      currentSongSections = [];
+      loadIntoPreview({
         type: 'scripture',
         reference: data.reference,
         text: data.text,
@@ -121,7 +223,7 @@ function lookupScripture() {
 
 function quickRef(ref) {
   document.getElementById('scripture-input').value = ref;
-  lookupScripture();
+  stageScripture();
 }
 
 function clearStage() {
@@ -134,8 +236,101 @@ function openDisplay() {
 }
 
 document.getElementById('scripture-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') lookupScripture();
+  if (e.key === 'Enter') { stageScripture(); e.stopPropagation(); }
 });
+
+// ================= Schedule (service run-list) =================
+let schedule = JSON.parse(localStorage.getItem('wp_schedule') || '[]');
+
+function saveScheduleToStorage() {
+  localStorage.setItem('wp_schedule', JSON.stringify(schedule));
+}
+
+function renderSchedule() {
+  const container = document.getElementById('schedule-list');
+  if (schedule.length === 0) {
+    container.innerHTML = '<p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Schedule" on any slide/scripture to build your service order.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  schedule.forEach((item, idx) => {
+    const div = document.createElement('div');
+    div.className = 'schedule-item';
+    div.innerHTML = `
+      <span class="sched-text">${idx + 1}. ${escapeHtmlLocal(item.displayTitle)}</span>
+      <span class="sched-controls">
+        <span onclick="event.stopPropagation(); moveScheduleItem(${idx}, -1)">↑</span>
+        <span onclick="event.stopPropagation(); moveScheduleItem(${idx}, 1)">↓</span>
+        <span onclick="event.stopPropagation(); removeScheduleItem(${idx})">✕</span>
+      </span>`;
+    div.onclick = () => loadScheduleItem(item);
+    container.appendChild(div);
+  });
+}
+renderSchedule();
+
+function addSongSlideToSchedule(songId, sectionIdx) {
+  const song = songs.find((s) => s.id === songId);
+  if (!song) return;
+  const section = song.sections[sectionIdx];
+  schedule.push({
+    displayTitle: `${song.title} — ${section.label}`,
+    stateType: 'song',
+    state: sectionToState(song, section),
+  });
+  saveScheduleToStorage();
+  renderSchedule();
+}
+
+function addScriptureToSchedule() {
+  const ref = document.getElementById('scripture-input').value.trim();
+  if (!ref) return;
+  schedule.push({ displayTitle: 'Scripture: ' + ref, stateType: 'scripture-ref', ref });
+  saveScheduleToStorage();
+  renderSchedule();
+}
+
+function loadScheduleItem(item) {
+  if (item.stateType === 'song') {
+    currentSongSections = [];
+    loadIntoPreview(item.state);
+  } else if (item.stateType === 'scripture-ref') {
+    const statusEl = document.getElementById('scripture-status');
+    statusEl.textContent = 'Looking up… ' + item.ref;
+    fetch('/api/scripture?ref=' + encodeURIComponent(item.ref))
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) {
+          statusEl.textContent = 'Not found: ' + item.ref;
+          return;
+        }
+        statusEl.textContent = 'Staged: ' + data.reference;
+        currentSongSections = [];
+        loadIntoPreview({ type: 'scripture', reference: data.reference, text: data.text, translation: data.translation, background: null });
+      });
+  }
+}
+
+function moveScheduleItem(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= schedule.length) return;
+  [schedule[idx], schedule[newIdx]] = [schedule[newIdx], schedule[idx]];
+  saveScheduleToStorage();
+  renderSchedule();
+}
+
+function removeScheduleItem(idx) {
+  schedule.splice(idx, 1);
+  saveScheduleToStorage();
+  renderSchedule();
+}
+
+function clearSchedule() {
+  if (!confirm('Clear the whole schedule?')) return;
+  schedule = [];
+  saveScheduleToStorage();
+  renderSchedule();
+}
 
 // ================= Voice Detect (Phase 2) =================
 let pendingSuggestion = null;

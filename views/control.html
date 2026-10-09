@@ -35,13 +35,22 @@
     </div>
 
     <div class="panel panel-slides">
-      <h2>Slides</h2>
+      <h2>Slides <span style="font-size:10px; color:#666; font-weight:400; letter-spacing:0;">(click to stage in Preview)</span></h2>
       <div id="slide-list"><p style="color:#666; font-size:13px;">Select a song to see its slides.</p></div>
+
+      <h2 style="margin-top:24px;">Today's Schedule</h2>
+      <div class="scripture-box">
+        <div id="schedule-list" style="margin-bottom:8px;"><p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Schedule" on any slide/scripture to build your service order.</p></div>
+        <button class="secondary" onclick="clearSchedule()" style="font-size:11px;">Clear Schedule</button>
+      </div>
 
       <h2 style="margin-top:24px;">Scripture</h2>
       <div class="scripture-box">
-        <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16" />
-        <button onclick="lookupScripture()">Project Scripture</button>
+        <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" />
+        <div style="display:flex; gap:8px;">
+          <button onclick="stageScripture()">Stage in Preview</button>
+          <button class="secondary" onclick="addScriptureToSchedule()">+ Schedule</button>
+        </div>
         <div class="quick-refs">
           <button class="secondary" onclick="quickRef('John 3:16')">John 3:16</button>
           <button class="secondary" onclick="quickRef('Genesis 1:1')">Genesis 1:1</button>
@@ -61,7 +70,7 @@
           </label>
         </div>
         <p style="font-size:11px; color:#888; margin:0 0 8px;">
-          Listens for spoken references like "Genesis chapter one verse one" and projects them automatically.
+          Listens for spoken references like "Genesis chapter one verse one" and projects them automatically (bypasses Preview — goes straight Live).
           Uncheck Auto-project to require a confirm click instead.
         </p>
         <div id="voice-status" style="font-size:12px; color:#999; margin-bottom:6px;">Not listening</div>
@@ -75,9 +84,34 @@
     </div>
 
     <div class="panel-preview">
-      <h2 style="margin:16px 16px 0;">Live Preview (audience sees this)</h2>
-      <div class="preview-frame">
-        <iframe src="/display"></iframe>
+      <div class="preview-section">
+        <h2 style="margin:16px 16px 0;">Preview <span style="font-size:10px; color:#666; font-weight:400;">(staged — not visible yet)</span></h2>
+        <div class="preview-frame preview-frame-staged">
+          <div class="stage blank" id="preview-stage">
+            <div class="stage-bg" id="preview-stage-bg"></div>
+            <div class="stage-overlay"></div>
+            <div class="stage-content" id="preview-stage-content"></div>
+            <div class="stage-label" id="preview-stage-label"></div>
+            <div class="standby-screen" id="preview-standby">
+              <div class="standby-brand-row" style="margin-bottom:10px;">
+                <img src="/images/brand/rccg-logo.png" alt="" class="standby-logo" style="height:48px; width:48px;" />
+                <img src="/images/brand/yp9-logo.png" alt="" class="standby-logo" style="height:48px; width:48px;" />
+              </div>
+              <div class="standby-title" style="font-size:16px; letter-spacing:3px;">NOTHING STAGED</div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:10px 16px; display:flex; gap:10px;">
+          <button onclick="goLive()" style="flex:1; font-size:15px; padding:12px;">▶ GO LIVE</button>
+          <button class="secondary" onclick="prevSlide()" title="Previous slide (←)">⬅</button>
+          <button class="secondary" onclick="nextSlide()" title="Next slide (→)">➡</button>
+        </div>
+      </div>
+      <div class="preview-section">
+        <h2 style="margin:8px 16px 0;">Live <span style="font-size:10px; color:#666; font-weight:400;">(audience sees this)</span></h2>
+        <div class="preview-frame">
+          <iframe src="/display"></iframe>
+        </div>
       </div>
     </div>
   </div>
