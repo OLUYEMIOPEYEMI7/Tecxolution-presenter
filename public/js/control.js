@@ -3,6 +3,7 @@ let songs = [];
 let activeSong = null;
 let songSearchTerm = '';
 let songSourceFilter = 'all';
+let songSearchDebounce = null;
 const MAX_RENDERED_SONGS = 150;
 
 const liveDot = document.getElementById('live-dot');
@@ -18,7 +19,12 @@ socket.on('disconnect', () => {
 });
 
 function reloadSongs() {
-  return fetch('/api/songs')
+  const params = new URLSearchParams();
+  if (songSearchTerm) params.set('q', songSearchTerm);
+  if (songSourceFilter !== 'all') params.set('source', songSourceFilter);
+  const footer = document.getElementById('song-list-footer');
+  if (songSearchTerm) footer.textContent = 'Searching…';
+  return fetch('/api/songs?' + params.toString())
     .then((r) => r.json())
     .then((data) => {
       songs = data.songs;
@@ -28,8 +34,12 @@ function reloadSongs() {
 reloadSongs();
 
 document.getElementById('song-search').addEventListener('input', (e) => {
-  songSearchTerm = e.target.value.toLowerCase().trim();
-  renderSongList();
+  const value = e.target.value;
+  clearTimeout(songSearchDebounce);
+  songSearchDebounce = setTimeout(() => {
+    songSearchTerm = value.toLowerCase().trim();
+    reloadSongs();
+  }, 250); // debounce — searches lyric text server-side, not just title
 });
 
 document.getElementById('song-tabs').addEventListener('click', (e) => {
@@ -38,7 +48,7 @@ document.getElementById('song-tabs').addEventListener('click', (e) => {
   document.querySelectorAll('.song-tab').forEach((t) => t.classList.remove('active'));
   btn.classList.add('active');
   songSourceFilter = btn.dataset.filter;
-  renderSongList();
+  reloadSongs();
 });
 
 const SOURCE_LABEL = { custom: 'MY SONG', hymn: 'HYMN', rccg: 'RCCG' };
@@ -48,18 +58,8 @@ function renderSongList() {
   const footer = document.getElementById('song-list-footer');
   container.innerHTML = '';
 
-  let filtered = songs.filter((s) => songSourceFilter === 'all' || s.source === songSourceFilter);
-  if (songSearchTerm) {
-    filtered = filtered.filter(
-      (s) =>
-        s.title.toLowerCase().includes(songSearchTerm) ||
-        (s.artist || '').toLowerCase().includes(songSearchTerm) ||
-        (s.hymnNumber && String(s.hymnNumber).includes(songSearchTerm))
-    );
-  }
-
-  const total = filtered.length;
-  const shown = filtered.slice(0, MAX_RENDERED_SONGS);
+  const total = songs.length;
+  const shown = songs.slice(0, MAX_RENDERED_SONGS);
 
   shown.forEach((song) => {
     const div = document.createElement('div');
@@ -76,7 +76,7 @@ function renderSongList() {
   });
 
   if (total === 0) {
-    container.innerHTML = '<p style="color:#666; font-size:13px;">No matches. Try a different search or tab.</p>';
+    container.innerHTML = '<p style="color:#666; font-size:13px;">No matches. Try a different keyword or tab.</p>';
     footer.textContent = '';
   } else if (total > MAX_RENDERED_SONGS) {
     footer.textContent = `Showing ${MAX_RENDERED_SONGS} of ${total} — keep typing to narrow it down.`;

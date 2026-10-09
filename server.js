@@ -36,12 +36,27 @@ function slugify(title) {
   return 'song-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
 }
 
-// Builds the full merged song list (all sources) with their complete section data.
-function getAllSongsFull() {
+// Builds the full merged song list (all sources) with their complete section
+// data, plus a precomputed lowercase search blob (title+artist+number+all
+// lyric lines) so keyword search doesn't re-scan structured JSON per request.
+let songCache = null;
+function buildSongCache() {
   const custom = loadSongs().songs.map((s) => ({ ...s, source: 'custom' }));
   const hymns = loadHymns().hymns.map((h) => ({ ...h, source: 'hymn' }));
   const rccg = loadRccgHymnal().hymns.map((h) => ({ ...h, source: 'rccg' }));
-  return [...custom, ...hymns, ...rccg];
+  const all = [...custom, ...hymns, ...rccg];
+  songCache = all.map((s) => {
+    const lyricText = s.sections.map((sec) => sec.pairs.map((p) => p.join(' ')).join(' ')).join(' ');
+    const rawText = [s.title, s.artist, s.hymnNumber, lyricText].filter(Boolean).join(' ').toLowerCase();
+    // Strip punctuation so "blessings, name" still matches a query typed as "blessings name"
+    const searchText = rawText.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ');
+    return { ...s, _searchText: searchText };
+  });
+  return songCache;
+}
+
+function getAllSongsFull() {
+  return songCache || buildSongCache();
 }
 
 // Two independent states: liveState is what the audience sees, previewState
@@ -59,7 +74,37 @@ app.get('/', (req, res) => res.redirect('/control'));
 app.get('/api/songs', (req, res) => {
   // Lightweight metadata only — full lyrics are fetched on demand via /api/songs/:id
   // so the browser doesn't have to download the entire ~3MB hymnal up front.
-  const all = getAllSongsFull();
+  // ?q= searches title, artist, hymn number AND full lyric text (keyword search).
+  // ?source= filters to custom|hymn|rccg.
+  let all = getAllSongsFull();
+  const q = (req.query.q || '').trim().toLowerCase();
+  const source = req.query.source || 'all';
+
+  if (source !== 'all') all = all.filter((s) => s.source === source);
+  if (q) {
+    // Match every typed word somewhere in the song's text — forgiving of
+    // word order, punctuation, and misremembered phrasing. Common stopwords
+    // are ignored for scoring since they're too common to be discriminating.
+    const STOPWORDS = new Set(['my','the','a','an','is','of','to','in','on','for','and','that','this','with','at','by','from','as','it','be','we','you','your','he','his','him','she','her','they','them','our','us','i','am','are','was','were','will','shall','thy','thee','thou','o']);
+    const allWords = q.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const words = allWords.filter((w) => !STOPWORDS.has(w));
+    const effectiveWords = words.length > 0 ? words : allWords; // if query is only stopwords, use them anyway
+
+    let matched = all.filter((s) => effectiveWords.every((w) => s._searchText.includes(w)));
+    if (matched.length === 0 && effectiveWords.length > 1) {
+      // Nothing matched every word (e.g. one word misremembered) — fall back
+      // to songs matching a clear majority of the words, ranked best-first.
+      const threshold = Math.max(2, Math.ceil(effectiveWords.length * 0.6));
+      matched = all
+        .map((s) => ({ s, score: effectiveWords.filter((w) => s._searchText.includes(w)).length }))
+        .filter((x) => x.score >= threshold)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 20)
+        .map((x) => x.s);
+    }
+    all = matched;
+  }
+
   const light = all.map((s) => ({
     id: s.id,
     title: s.title,
@@ -92,6 +137,7 @@ app.post('/api/songs', (req, res) => {
   };
   data.songs.push(newSong);
   saveSongs(data);
+  songCache = null; // invalidate so the new song is searchable immediately
   res.json(newSong);
 });
 
@@ -104,6 +150,7 @@ app.delete('/api/songs/:id', (req, res) => {
     return res.status(404).json({ error: 'Song not found (hymns cannot be deleted)' });
   }
   saveSongs(data);
+  songCache = null; // invalidate
   res.json({ ok: true });
 });
 
