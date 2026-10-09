@@ -29,9 +29,18 @@
   <div class="control-main">
     <div class="panel panel-songs">
       <h2>Songs &amp; Hymns</h2>
-      <input type="text" id="song-search" placeholder="Search songs or hymns…" style="width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:13px; margin-bottom:10px;" />
-      <button onclick="openAddSongModal()" style="width:100%; margin-bottom:12px;">+ Add Song</button>
+      <div class="song-tabs" id="song-tabs">
+        <button class="song-tab active" data-filter="all">All</button>
+        <button class="song-tab" data-filter="custom">My Songs</button>
+        <button class="song-tab" data-filter="hymn">Classic Hymns</button>
+        <button class="song-tab" data-filter="rccg">RCCG Hymnal</button>
+      </div>
+      <input type="text" id="song-search" placeholder="Search by title or hymn number…" class="search-input" />
+      <button class="add-song-btn" onclick="openAddSongModal()">
+        <span class="add-song-icon">+</span> Add Your Own Song
+      </button>
       <div id="song-list"></div>
+      <div id="song-list-footer" class="song-list-footer"></div>
     </div>
 
     <div class="panel panel-slides">
@@ -105,25 +114,50 @@
   </div>
 
   <!-- Add Song Modal -->
-  <div id="add-song-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:100; align-items:center; justify-content:center;">
-    <div style="background:#16162a; border:1px solid var(--deep-gold); border-radius:10px; width:600px; max-height:85vh; overflow-y:auto; padding:24px;">
-      <h2 style="margin:0 0 16px; color:var(--gold); letter-spacing:1px;">Add a New Song</h2>
-
-      <label style="font-size:12px; color:#999;">Title</label>
-      <input type="text" id="new-song-title" placeholder="Song title" style="width:100%; padding:8px; margin:4px 0 12px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff;" />
-
-      <label style="font-size:12px; color:#999;">Artist / Choir</label>
-      <input type="text" id="new-song-artist" placeholder="e.g. Peculiar Voices" style="width:100%; padding:8px; margin:4px 0 16px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff;" />
-
-      <div id="new-song-sections"></div>
-
-      <button class="secondary" onclick="addSectionField()" style="margin-top:8px;">+ Add Section (Verse / Chorus)</button>
-
-      <div style="margin-top:20px; display:flex; gap:10px;">
-        <button onclick="submitNewSong()">Save Song</button>
-        <button class="secondary" onclick="closeAddSongModal()">Cancel</button>
+  <div id="add-song-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Add Your Own Song</h2>
+        <span class="modal-close" onclick="closeAddSongModal()">✕</span>
       </div>
-      <p id="add-song-status" style="font-size:12px; color:#999; margin-top:8px;"></p>
+
+      <div class="modal-body">
+        <div class="form-row">
+          <label>Song Title</label>
+          <input type="text" id="new-song-title" placeholder="e.g. Is He Worthy?" class="form-input" />
+        </div>
+
+        <div class="form-row">
+          <label>Artist or Choir <span class="label-optional">(optional)</span></label>
+          <input type="text" id="new-song-artist" placeholder="e.g. Peculiar Voices" class="form-input" />
+        </div>
+
+        <div class="form-row">
+          <label>Lyrics</label>
+          <p class="form-hint">
+            Just paste or type the whole song below. <strong>Leave one blank line between each verse/chorus</strong> —
+            we'll automatically split it into slides for you.
+          </p>
+          <textarea id="new-song-lyrics" class="form-textarea" rows="12" placeholder="Is He worthy? Is He worthy?
+Of all blessing and honor and glory?
+Is He worthy of this?
+
+He is worthy, He is worthy
+He is worthy, worthy worthy
+
+(Each blank line = a new slide. Easy!)"></textarea>
+        </div>
+
+        <div class="lyrics-preview" id="lyrics-preview">
+          <span class="lyrics-preview-empty">Start typing above — a live preview of your slides appears here.</span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="secondary" onclick="closeAddSongModal()">Cancel</button>
+        <button onclick="submitNewSong()">Save Song</button>
+      </div>
+      <p id="add-song-status" class="form-status"></p>
     </div>
   </div>
 

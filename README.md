@@ -60,3 +60,18 @@ you trust it, then switch to auto-project.
 song slides. Scripture detection (Phase 2) was prioritized first because
 spoken references are far more reliable to detect than lyrics sung over
 music/harmony.
+
+## RCCG Hymnal (826 hymns)
+
+The full official RCCG "Redeemed Hymnal — 4th Edition" (hymns #1–826) is built in,
+sourced from getrhema.net and scraped via `scripts/scrape-rccg-hymnal.js` into
+`data/rccg-hymnal.json`. Search by title or hymn number in the "RCCG Hymnal" tab.
+
+To re-scrape (e.g. if the source site updates): `node scripts/scrape-rccg-hymnal.js`
+
+## Adding your own songs
+
+Click "+ Add Your Own Song", enter a title, then paste the full lyrics into the
+box — leave one blank line between each verse/chorus and it auto-splits into
+slides. Starting a block with "Chorus", "Refrain", "Bridge", "Intro" or "Outro"
+labels that slide automatically; everything else is numbered VERSE 1, VERSE 2...

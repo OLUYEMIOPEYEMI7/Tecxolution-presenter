@@ -2,6 +2,8 @@ const socket = io();
 let songs = [];
 let activeSong = null;
 let songSearchTerm = '';
+let songSourceFilter = 'all';
+const MAX_RENDERED_SONGS = 150;
 
 const liveDot = document.getElementById('live-dot');
 const liveText = document.getElementById('live-text');
@@ -26,22 +28,45 @@ function reloadSongs() {
 reloadSongs();
 
 document.getElementById('song-search').addEventListener('input', (e) => {
-  songSearchTerm = e.target.value.toLowerCase();
+  songSearchTerm = e.target.value.toLowerCase().trim();
   renderSongList();
 });
 
+document.getElementById('song-tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.song-tab');
+  if (!btn) return;
+  document.querySelectorAll('.song-tab').forEach((t) => t.classList.remove('active'));
+  btn.classList.add('active');
+  songSourceFilter = btn.dataset.filter;
+  renderSongList();
+});
+
+const SOURCE_LABEL = { custom: 'MY SONG', hymn: 'HYMN', rccg: 'RCCG' };
+
 function renderSongList() {
   const container = document.getElementById('song-list');
+  const footer = document.getElementById('song-list-footer');
   container.innerHTML = '';
-  const filtered = songs.filter(
-    (s) => s.title.toLowerCase().includes(songSearchTerm) || (s.artist || '').toLowerCase().includes(songSearchTerm)
-  );
-  filtered.forEach((song) => {
+
+  let filtered = songs.filter((s) => songSourceFilter === 'all' || s.source === songSourceFilter);
+  if (songSearchTerm) {
+    filtered = filtered.filter(
+      (s) =>
+        s.title.toLowerCase().includes(songSearchTerm) ||
+        (s.artist || '').toLowerCase().includes(songSearchTerm) ||
+        (s.hymnNumber && String(s.hymnNumber).includes(songSearchTerm))
+    );
+  }
+
+  const total = filtered.length;
+  const shown = filtered.slice(0, MAX_RENDERED_SONGS);
+
+  shown.forEach((song) => {
     const div = document.createElement('div');
     div.className = 'song-item';
-    const badge = song.source === 'hymn'
-      ? '<span style="font-size:10px; color:#8a8aa0; border:1px solid #444; border-radius:4px; padding:1px 5px; margin-left:6px;">HYMN</span>'
-      : '<span style="font-size:10px; color:var(--gold); border:1px solid var(--deep-gold); border-radius:4px; padding:1px 5px; margin-left:6px;">MY SONG</span>';
+    div.dataset.id = song.id;
+    const badgeLabel = song.source === 'rccg' && song.hymnNumber ? `#${song.hymnNumber}` : SOURCE_LABEL[song.source] || '';
+    const badge = `<span class="song-badge ${song.source}">${badgeLabel}</span>`;
     const delBtn = song.source === 'custom'
       ? `<span onclick="event.stopPropagation(); deleteSong('${song.id}')" style="float:right; color:#a3303c; font-size:12px; cursor:pointer;">✕</span>`
       : '';
@@ -49,8 +74,14 @@ function renderSongList() {
     div.onclick = () => selectSong(song);
     container.appendChild(div);
   });
-  if (filtered.length === 0) {
-    container.innerHTML = '<p style="color:#666; font-size:13px;">No matches.</p>';
+
+  if (total === 0) {
+    container.innerHTML = '<p style="color:#666; font-size:13px;">No matches. Try a different search or tab.</p>';
+    footer.textContent = '';
+  } else if (total > MAX_RENDERED_SONGS) {
+    footer.textContent = `Showing ${MAX_RENDERED_SONGS} of ${total} — keep typing to narrow it down.`;
+  } else {
+    footer.textContent = `${total} song${total === 1 ? '' : 's'}`;
   }
 }
 
@@ -62,31 +93,44 @@ function deleteSong(id) {
 }
 
 function selectSong(song) {
-  activeSong = song;
-  currentSongSections = song.sections;
-  currentSectionIndex = -1;
-  document.querySelectorAll('.song-item').forEach((el) => el.classList.remove('active'));
-  renderSongList();
-  [...document.querySelectorAll('.song-item')].find((el, i) => songs[i].id === song.id)?.classList.add('active');
-
   const container = document.getElementById('slide-list');
-  container.innerHTML = '';
-  song.sections.forEach((section, idx) => {
-    const div = document.createElement('div');
-    div.className = 'slide-item';
-    const previewText = section.pairs.map((p) => p[0]).join(' ').slice(0, 70);
-    div.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div style="flex:1;"><div class="slide-label">${section.label}</div><div class="slide-preview">${previewText}…</div></div>
-        <span onclick="event.stopPropagation(); addSongSlideToSchedule('${song.id}', ${idx})" style="font-size:10px; color:#888; border:1px solid #444; border-radius:4px; padding:2px 6px; margin-left:8px; white-space:nowrap;">+ Sched</span>
-      </div>`;
-    div.onclick = () => {
-      currentSectionIndex = idx;
-      highlightActiveSlide();
-      stageState(sectionToState(song, section));
-    };
-    container.appendChild(div);
-  });
+  container.innerHTML = '<p style="color:#666; font-size:13px;">Loading…</p>';
+  document.querySelectorAll('.song-item').forEach((el) => el.classList.toggle('active', el.dataset.id === song.id));
+
+  // Full lyrics are fetched on demand — the browse list only carries metadata
+  // so it stays fast even with 800+ hymns loaded.
+  fetch('/api/songs/' + encodeURIComponent(song.id))
+    .then((r) => r.json())
+    .then((full) => {
+      if (full.error) {
+        container.innerHTML = '<p style="color:#a3303c; font-size:13px;">Could not load this song.</p>';
+        return;
+      }
+      activeSong = full;
+      currentSongSections = full.sections;
+      currentSectionIndex = -1;
+
+      container.innerHTML = '';
+      full.sections.forEach((section, idx) => {
+        const div = document.createElement('div');
+        div.className = 'slide-item';
+        const previewText = section.pairs.map((p) => p[0]).join(' ').slice(0, 70);
+        div.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div style="flex:1;"><div class="slide-label">${section.label}</div><div class="slide-preview">${previewText}…</div></div>
+            <span onclick="event.stopPropagation(); addSongSlideToSchedule('${full.id}', ${idx})" style="font-size:10px; color:#888; border:1px solid #444; border-radius:4px; padding:2px 6px; margin-left:8px; white-space:nowrap;">+ Sched</span>
+          </div>`;
+        div.onclick = () => {
+          currentSectionIndex = idx;
+          highlightActiveSlide();
+          stageState(sectionToState(full, section));
+        };
+        container.appendChild(div);
+      });
+    })
+    .catch(() => {
+      container.innerHTML = '<p style="color:#a3303c; font-size:13px;">Error loading song.</p>';
+    });
 }
 
 function highlightActiveSlide() {
@@ -222,7 +266,7 @@ function renderSchedule() {
 renderSchedule();
 
 function addSongSlideToSchedule(songId, sectionIdx) {
-  const song = songs.find((s) => s.id === songId);
+  const song = activeSong && activeSong.id === songId ? activeSong : null;
   if (!song) return;
   const section = song.sections[sectionIdx];
   schedule.push({
@@ -363,71 +407,93 @@ function confirmVoiceSuggestion() {
   document.getElementById('voice-suggestion').style.display = 'none';
 }
 
-// ================= Add Song Modal =================
-let sectionCount = 0;
+// ================= Add Song Modal (simplified: paste lyrics, auto-split) =================
+const LABEL_KEYWORDS = [
+  { re: /^chorus\b/i, label: 'CHORUS' },
+  { re: /^refrain\b/i, label: 'REFRAIN' },
+  { re: /^bridge\b/i, label: 'BRIDGE' },
+  { re: /^intro\b/i, label: 'INTRO' },
+  { re: /^outro\b/i, label: 'OUTRO' },
+  { re: /^verse\s*\d*/i, label: null }, // null = use the matched text itself, uppercased
+];
+
+// Splits pasted lyrics on blank lines into slide sections, auto-labeling
+// VERSE/CHORUS/etc. when the first line names it, else numbering plainly.
+function parseLyricsIntoSections(raw) {
+  const blocks = raw.split(/\n\s*\n+/).map((b) => b.trim()).filter((b) => b.length > 0);
+  let verseCount = 0;
+  return blocks.map((block) => {
+    let lines = block.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    let label = null;
+
+    const firstLine = lines[0] || '';
+    const firstLineIsLabel = /^(chorus|refrain|bridge|intro|outro|verse)\b.*:?$/i.test(firstLine) && firstLine.split(/\s+/).length <= 3;
+    if (firstLineIsLabel) {
+      label = firstLine.replace(/:$/, '').toUpperCase();
+      lines = lines.slice(1);
+    }
+    if (!label) {
+      verseCount++;
+      label = `VERSE ${verseCount}`;
+    }
+    const pairs = lines.map((l) => [l, '']);
+    return { label, pairs, background: null };
+  }).filter((s) => s.pairs.length > 0);
+}
+
+function renderLyricsPreview() {
+  const raw = document.getElementById('new-song-lyrics').value;
+  const preview = document.getElementById('lyrics-preview');
+  if (!raw.trim()) {
+    preview.innerHTML = '<span class="lyrics-preview-empty">Start typing above — a live preview of your slides appears here.</span>';
+    return;
+  }
+  const sections = parseLyricsIntoSections(raw);
+  if (sections.length === 0) {
+    preview.innerHTML = '<span class="lyrics-preview-empty">Keep typing…</span>';
+    return;
+  }
+  preview.innerHTML = `<div style="font-size:11px; color:#777; margin-bottom:8px;">${sections.length} slide${sections.length === 1 ? '' : 's'} will be created:</div>` +
+    sections.map((s, i) => {
+      const firstLine = (s.pairs[0] && s.pairs[0][0]) || '';
+      return `<span class="preview-slide-chip"><span class="chip-num">${i + 1}</span><span class="chip-label">${s.label}</span><span class="chip-text">${escapeHtmlLocal(firstLine).slice(0, 36)}${firstLine.length > 36 ? '…' : ''}</span></span>`;
+    }).join('');
+}
+
+function escapeHtmlLocal(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
 
 function openAddSongModal() {
-  document.getElementById('add-song-modal').style.display = 'flex';
+  document.getElementById('add-song-modal').classList.add('open');
   document.getElementById('new-song-title').value = '';
   document.getElementById('new-song-artist').value = '';
-  document.getElementById('new-song-sections').innerHTML = '';
+  document.getElementById('new-song-lyrics').value = '';
   document.getElementById('add-song-status').textContent = '';
-  sectionCount = 0;
-  addSectionField();
+  renderLyricsPreview();
 }
 
 function closeAddSongModal() {
-  document.getElementById('add-song-modal').style.display = 'none';
+  document.getElementById('add-song-modal').classList.remove('open');
 }
 
-function addSectionField() {
-  sectionCount++;
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'background:#0b0b1a; border:1px solid #2a2a44; border-radius:8px; padding:12px; margin-bottom:10px;';
-  wrap.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <input type="text" placeholder="Section label (e.g. VERSE 1, CHORUS)" class="section-label" style="flex:1; padding:6px; border-radius:6px; border:1px solid #333; background:#16162a; color:#fff; font-size:12px;" />
-      <span class="remove-section-btn" style="color:#a3303c; cursor:pointer; margin-left:8px;">✕ remove</span>
-    </div>
-    <textarea placeholder="One lyric line per line. Optionally add a response after a | e.g.&#10;Do you feel the world is broken? | We do." class="section-lyrics" rows="4" style="width:100%; padding:6px; border-radius:6px; border:1px solid #333; background:#16162a; color:#fff; font-size:12px; font-family:inherit;"></textarea>
-    <input type="text" placeholder="Optional finale banner (e.g. HE IS.)" class="section-finale" style="width:100%; padding:6px; margin-top:6px; border-radius:6px; border:1px solid #333; background:#16162a; color:#fff; font-size:12px;" />
-  `;
-  wrap.querySelector('.remove-section-btn').onclick = () => wrap.remove();
-  document.getElementById('new-song-sections').appendChild(wrap);
-}
+document.getElementById('new-song-lyrics').addEventListener('input', renderLyricsPreview);
 
 function submitNewSong() {
   const title = document.getElementById('new-song-title').value.trim();
   const artist = document.getElementById('new-song-artist').value.trim();
+  const lyricsRaw = document.getElementById('new-song-lyrics').value;
   const statusEl = document.getElementById('add-song-status');
 
   if (!title) {
-    statusEl.textContent = 'Please enter a title.';
+    statusEl.textContent = 'Please enter a song title.';
     return;
   }
-
-  const sectionEls = [...document.querySelectorAll('#new-song-sections > div')];
-  const sections = sectionEls.map((el) => {
-    const label = el.querySelector('.section-label').value.trim() || 'SECTION';
-    const lyricsRaw = el.querySelector('.section-lyrics').value.trim();
-    const finale = el.querySelector('.section-finale').value.trim();
-    const pairs = lyricsRaw
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => {
-        const parts = line.split('|');
-        const call = parts[0].trim();
-        const response = parts[1] ? parts[1].trim() : '';
-        return [call, response];
-      });
-    const section = { label, pairs, background: null };
-    if (finale) section.finale = finale;
-    return section;
-  }).filter((s) => s.pairs.length > 0);
-
+  const sections = parseLyricsIntoSections(lyricsRaw);
   if (sections.length === 0) {
-    statusEl.textContent = 'Add at least one section with lyrics.';
+    statusEl.textContent = 'Please paste the song lyrics first.';
     return;
   }
 
@@ -443,9 +509,9 @@ function submitNewSong() {
         statusEl.textContent = 'Error: ' + data.error;
         return;
       }
-      statusEl.textContent = 'Saved!';
+      statusEl.textContent = 'Saved! ✓';
       reloadSongs();
-      setTimeout(closeAddSongModal, 500);
+      setTimeout(closeAddSongModal, 600);
     })
     .catch((e) => {
       statusEl.textContent = 'Error: ' + e.message;

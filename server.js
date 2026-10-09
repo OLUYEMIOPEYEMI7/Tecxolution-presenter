@@ -27,8 +27,21 @@ function loadHymns() {
   return JSON.parse(fs.readFileSync(hymnsPath, 'utf8'));
 }
 
+const rccgHymnalPath = path.join(__dirname, 'data', 'rccg-hymnal.json');
+function loadRccgHymnal() {
+  return JSON.parse(fs.readFileSync(rccgHymnalPath, 'utf8'));
+}
+
 function slugify(title) {
   return 'song-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
+}
+
+// Builds the full merged song list (all sources) with their complete section data.
+function getAllSongsFull() {
+  const custom = loadSongs().songs.map((s) => ({ ...s, source: 'custom' }));
+  const hymns = loadHymns().hymns.map((h) => ({ ...h, source: 'hymn' }));
+  const rccg = loadRccgHymnal().hymns.map((h) => ({ ...h, source: 'rccg' }));
+  return [...custom, ...hymns, ...rccg];
 }
 
 // Two independent states: liveState is what the audience sees, previewState
@@ -44,9 +57,24 @@ app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'di
 app.get('/', (req, res) => res.redirect('/control'));
 
 app.get('/api/songs', (req, res) => {
-  const custom = loadSongs().songs.map((s) => ({ ...s, source: 'custom' }));
-  const hymns = loadHymns().hymns.map((h) => ({ ...h, source: 'hymn' }));
-  res.json({ songs: [...custom, ...hymns] });
+  // Lightweight metadata only — full lyrics are fetched on demand via /api/songs/:id
+  // so the browser doesn't have to download the entire ~3MB hymnal up front.
+  const all = getAllSongsFull();
+  const light = all.map((s) => ({
+    id: s.id,
+    title: s.title,
+    artist: s.artist || '',
+    source: s.source,
+    hymnNumber: s.hymnNumber || null,
+    sectionCount: s.sections.length,
+  }));
+  res.json({ songs: light });
+});
+
+app.get('/api/songs/:id', (req, res) => {
+  const song = getAllSongsFull().find((s) => s.id === req.params.id);
+  if (!song) return res.status(404).json({ error: 'Song not found' });
+  res.json(song);
 });
 
 // Add a new custom song
