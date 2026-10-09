@@ -119,6 +119,75 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 .stage.blank .stage-content,
 .stage.blank .stage-label { opacity: 0; }
 
+.standby-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #15152e 0%, #09091a 75%);
+}
+.stage.blank .standby-screen { display: flex; }
+
+.standby-brand-row {
+  display: flex;
+  gap: 28px;
+  margin-bottom: 28px;
+  animation: standby-fade-in 1.2s ease;
+}
+.standby-logo {
+  height: 110px;
+  width: 110px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #fff;
+  padding: 6px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6), 0 0 0 3px var(--deep-gold);
+}
+.standby-title {
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: bold;
+  letter-spacing: 6px;
+  color: var(--gold);
+  text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+  animation: standby-fade-in 1.4s ease;
+}
+.standby-subtitle {
+  font-size: clamp(13px, 1.6vw, 18px);
+  letter-spacing: 4px;
+  color: var(--cream);
+  opacity: 0.75;
+  margin-top: 10px;
+  text-transform: uppercase;
+  animation: standby-fade-in 1.6s ease;
+}
+@keyframes standby-fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.corner-watermark {
+  position: absolute;
+  bottom: 18px;
+  right: 22px;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+  opacity: 0.55;
+}
+.stage.blank .corner-watermark { display: none; }
+.corner-watermark img {
+  height: 34px;
+  width: 34px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #fff;
+  padding: 2px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
 /* ============== CONTROL ROOM STYLES ============== */
 .control-body {
   margin: 0;
@@ -131,19 +200,59 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 }
 
 .control-header {
-  background: #0b0b1a;
+  background: linear-gradient(135deg, #0b0b1a 0%, #141428 100%);
   padding: 14px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 2px solid var(--deep-gold);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.4);
 }
+
+.brand-strip {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, #c8102e 0%, #c8102e 33%, var(--gold) 33%, var(--gold) 66%, #1a2a6c 66%, #1a2a6c 100%);
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-logo {
+  height: 44px;
+  width: 44px;
+  border-radius: 50%;
+  object-fit: contain;
+  background: #fff;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.header-titles {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.header-header h1 { margin: 0; }
 .control-header h1 {
-  font-size: 20px;
+  font-size: 19px;
   color: var(--gold);
   margin: 0;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  font-weight: 700;
 }
+.header-subtitle {
+  font-size: 11px;
+  color: #9a9ab5;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
 .control-header .actions button {
   margin-left: 10px;
 }
@@ -159,29 +268,33 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
   overflow-y: auto;
 }
 
-.panel-songs { width: 22%; background: #16162a; border-right: 1px solid #2a2a44; }
+.panel-songs { width: 22%; background: #16162a; border-right: 1px solid #2a2a44; box-shadow: inset -8px 0 16px -16px #000; }
 .panel-slides { width: 38%; background: #121221; border-right: 1px solid #2a2a44; }
 .panel-preview { width: 40%; background: #0b0b1a; display: flex; flex-direction: column; }
 
 .panel h2 {
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 2.5px;
   color: #8a8aa0;
   margin: 4px 0 12px;
+  font-weight: 700;
+  border-bottom: 1px solid #262640;
+  padding-bottom: 8px;
 }
 
 .song-item, .slide-item {
-  background: #1d1d35;
+  background: linear-gradient(180deg, #1d1d35 0%, #1a1a30 100%);
   border: 1px solid #2a2a44;
   border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 8px;
   cursor: pointer;
   transition: 0.15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
 }
-.song-item:hover, .slide-item:hover { border-color: var(--gold); background: #24243f; }
-.song-item.active, .slide-item.active { border-color: var(--gold); background: #2c2c13; }
+.song-item:hover, .slide-item:hover { border-color: var(--gold); background: #24243f; transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.4); }
+.song-item.active, .slide-item.active { border-color: var(--gold); background: #2c2c13; box-shadow: 0 0 0 1px var(--gold); }
 
 .song-item .song-title { font-weight: bold; color: #fff; font-size: 14px; }
 .song-item .song-artist { font-size: 12px; color: #999; }
@@ -218,19 +331,21 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 }
 
 button {
-  background: var(--deep-gold);
-  color: #000;
+  background: linear-gradient(180deg, var(--gold) 0%, var(--deep-gold) 100%);
+  color: #1a1400;
   border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: bold;
+  padding: 9px 16px;
+  border-radius: 7px;
+  font-weight: 700;
   cursor: pointer;
   font-size: 13px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  transition: 0.15s;
 }
-button:hover { background: var(--gold); }
-button.secondary { background: #2a2a44; color: #eee; }
+button:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.45); }
+button.secondary { background: linear-gradient(180deg, #32324f 0%, #2a2a44 100%); color: #eee; }
 button.secondary:hover { background: #3a3a5a; }
-button.danger { background: #a3303c; color: #fff; }
+button.danger { background: linear-gradient(180deg, #c23a48 0%, #a3303c 100%); color: #fff; }
 button.danger:hover { background: #c23a48; }
 
 .preview-frame {
