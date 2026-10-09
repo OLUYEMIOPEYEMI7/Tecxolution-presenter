@@ -94,21 +94,42 @@
 
     <div class="panel-preview">
       <div class="preview-section">
-        <h2 style="margin:16px 16px 0;">Theme <span style="font-size:10px; color:#666; font-weight:400;">(applies to the current & next slides)</span></h2>
-        <div class="theme-picker" id="theme-picker" style="padding:0 16px 14px;">
-          <div class="theme-swatch swatch-photo active" data-theme="photo" title="Photo (each song's own background)"><span class="swatch-label">Photo</span></div>
-          <div class="theme-swatch swatch-classic" data-theme="classic" title="Classic Gold"><span class="swatch-label">Classic</span></div>
-          <div class="theme-swatch swatch-royal" data-theme="royal" title="Royal Purple"><span class="swatch-label">Royal</span></div>
-          <div class="theme-swatch swatch-crimson" data-theme="crimson" title="Crimson"><span class="swatch-label">Crimson</span></div>
-          <div class="theme-swatch swatch-emerald" data-theme="emerald" title="Emerald"><span class="swatch-label">Emerald</span></div>
-          <div class="theme-swatch swatch-midnight" data-theme="midnight" title="Midnight Blue"><span class="swatch-label">Midnight</span></div>
-          <div class="theme-swatch swatch-sunset" data-theme="sunset" title="Sunset"><span class="swatch-label">Sunset</span></div>
-          <div class="theme-swatch swatch-pure" data-theme="pure" title="Pure Light"><span class="swatch-label">Pure</span></div>
-          <div class="theme-swatch swatch-blank" data-theme="blank" title="Blank (plain black)"><span class="swatch-label">Blank</span></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin:16px 16px 0; position:relative;">
+          <h2 style="margin:0;">Preview <span style="font-size:10px; color:#666; font-weight:400;">(staged — not visible yet, true-to-scale miniature of Live)</span></h2>
+          <button class="secondary theme-toggle-btn" onclick="toggleThemePopover()" title="Choose a display theme">🎨 Theme</button>
+          <div id="theme-popover" class="theme-popover">
+            <div class="theme-popover-header">
+              <span>Choose a Theme</span>
+              <span class="modal-close" onclick="toggleThemePopover(false)">✕</span>
+            </div>
+            <div class="theme-picker" id="theme-picker">
+              <div class="theme-swatch swatch-photo active" data-theme="photo" title="Photo (each song's own background)"><span class="swatch-label">Photo</span></div>
+              <div class="theme-swatch swatch-classic" data-theme="classic" title="Classic Gold"><span class="swatch-label">Classic</span></div>
+              <div class="theme-swatch swatch-royal" data-theme="royal" title="Royal Purple"><span class="swatch-label">Royal</span></div>
+              <div class="theme-swatch swatch-crimson" data-theme="crimson" title="Crimson"><span class="swatch-label">Crimson</span></div>
+              <div class="theme-swatch swatch-emerald" data-theme="emerald" title="Emerald"><span class="swatch-label">Emerald</span></div>
+              <div class="theme-swatch swatch-midnight" data-theme="midnight" title="Midnight Blue"><span class="swatch-label">Midnight</span></div>
+              <div class="theme-swatch swatch-sunset" data-theme="sunset" title="Sunset"><span class="swatch-label">Sunset</span></div>
+              <div class="theme-swatch swatch-pure" data-theme="pure" title="Pure Light"><span class="swatch-label">Pure</span></div>
+              <div class="theme-swatch swatch-blank" data-theme="blank" title="Blank (plain black)"><span class="swatch-label">Blank</span></div>
+              <div id="custom-theme-swatches"></div>
+              <div class="theme-swatch swatch-add" id="add-theme-tile" onclick="openAddThemeForm()" title="Add your own theme">
+                <span class="add-theme-plus">+</span>
+              </div>
+            </div>
+            <div id="add-theme-form" class="add-theme-form" style="display:none;">
+              <input type="text" id="new-theme-name" placeholder="Theme name (e.g. Christmas)" class="form-input" style="margin-bottom:8px; font-size:12px; padding:7px 10px;" />
+              <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                <label style="font-size:11px; color:#999;">From <input type="color" id="new-theme-color1" value="#1b1b35" style="vertical-align:middle;"></label>
+                <label style="font-size:11px; color:#999;">To <input type="color" id="new-theme-color2" value="#06060d" style="vertical-align:middle;"></label>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button onclick="saveCustomTheme()" style="flex:1; font-size:12px; padding:7px;">Save Theme</button>
+                <button class="secondary" onclick="openAddThemeForm(false)" style="font-size:12px; padding:7px;">Cancel</button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="preview-section">
-        <h2 style="margin:16px 16px 0;">Preview <span style="font-size:10px; color:#666; font-weight:400;">(staged — not visible yet, true-to-scale miniature of Live)</span></h2>
         <div class="preview-frame preview-frame-staged">
           <iframe src="/display?mode=preview"></iframe>
         </div>

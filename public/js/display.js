@@ -7,7 +7,8 @@ const stageLabel = document.getElementById('stage-label');
 
 function render(state) {
   const theme = state.theme || 'photo';
-  stage.className = 'stage ' + (state.type || 'blank') + ' theme-' + theme;
+  stage.className = 'stage ' + (state.type || 'blank') + ' theme-' + (state.themeBg ? 'custom' : theme);
+  stage.style.background = state.themeBg || '';
 
   // "photo" keeps each song's own background image; any other theme is a
   // flat color design and ignores the per-song image entirely.

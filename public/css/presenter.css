@@ -126,6 +126,7 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
   gap: 8px;
   margin-bottom: 4px;
 }
+#custom-theme-swatches { display: contents; }
 .theme-swatch {
   position: relative;
   height: 40px;
@@ -157,6 +158,44 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 .theme-swatch.swatch-pure { background: linear-gradient(165deg, #fdf6e3, #f3e8c8); }
 .theme-swatch.swatch-pure .swatch-label { color: #6b5d3f; text-shadow: none; }
 .theme-swatch.swatch-blank { background: #000; border-color: #333; }
+
+/* Theme picker now lives in a floating popover (toggled by a button) so it
+   never pushes the Live preview out of view below the fold. */
+.theme-toggle-btn { font-size: 12px; padding: 6px 12px; white-space: nowrap; }
+.theme-popover {
+  display: none;
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 50;
+  width: 300px;
+  background: linear-gradient(180deg, #181830 0%, #141428 100%);
+  border: 1px solid var(--deep-gold);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  padding: 14px;
+}
+.theme-popover.open { display: block; }
+.theme-popover-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.3px;
+  margin-bottom: 10px;
+}
+.theme-swatch.swatch-add {
+  background: #1a1a30;
+  border: 1.5px dashed #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-swatch.swatch-add:hover { border-color: var(--deep-gold); }
+.add-theme-plus { font-size: 20px; color: #888; }
+.add-theme-form { margin-top: 12px; border-top: 1px solid #262640; padding-top: 12px; }
 
 .scripture-ref {
   font-size: clamp(22px, 3vw, 34px);

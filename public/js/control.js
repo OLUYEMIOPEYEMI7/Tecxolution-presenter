@@ -156,10 +156,16 @@ function sectionToState(song, section) {
 let currentSongSections = [];
 let currentSectionIndex = -1;
 let currentTheme = localStorage.getItem('wp_theme') || 'photo';
+let customThemes = JSON.parse(localStorage.getItem('wp_custom_themes') || '[]');
 let lastStagedState = null;
 
+function findCustomTheme(id) {
+  return customThemes.find((t) => t.id === id);
+}
+
 function withTheme(state) {
-  return { ...state, theme: currentTheme };
+  const custom = findCustomTheme(currentTheme);
+  return { ...state, theme: currentTheme, themeBg: custom ? custom.css : null };
 }
 
 function stageState(state) {
@@ -171,15 +177,77 @@ function goLive() {
   socket.emit('golive');
 }
 
+function renderCustomThemeSwatches() {
+  const container = document.getElementById('custom-theme-swatches');
+  container.innerHTML = customThemes.map((t) => `
+    <div class="theme-swatch" data-theme="${t.id}" title="${escapeHtmlLocal(t.name)}" style="background:${t.css}; position:relative;">
+      <span class="swatch-label">${escapeHtmlLocal(t.name).slice(0, 10)}</span>
+      <span onclick="event.stopPropagation(); deleteCustomTheme('${t.id}')" style="position:absolute; top:2px; right:3px; font-size:9px; color:rgba(255,255,255,0.7); cursor:pointer;">✕</span>
+    </div>
+  `).join('');
+  document.querySelectorAll('.theme-swatch').forEach((s) => s.classList.toggle('active', s.dataset.theme === currentTheme));
+}
+renderCustomThemeSwatches();
+
+function deleteCustomTheme(id) {
+  customThemes = customThemes.filter((t) => t.id !== id);
+  localStorage.setItem('wp_custom_themes', JSON.stringify(customThemes));
+  if (currentTheme === id) {
+    currentTheme = 'photo';
+    localStorage.setItem('wp_theme', currentTheme);
+  }
+  renderCustomThemeSwatches();
+}
+
 document.getElementById('theme-picker').addEventListener('click', (e) => {
   const swatch = e.target.closest('.theme-swatch');
-  if (!swatch) return;
+  if (!swatch || swatch.id === 'add-theme-tile') return;
   currentTheme = swatch.dataset.theme;
   localStorage.setItem('wp_theme', currentTheme);
   document.querySelectorAll('.theme-swatch').forEach((s) => s.classList.toggle('active', s === swatch));
   if (lastStagedState) stageState(lastStagedState); // re-stage with the new theme so it's visible right away
 });
-document.querySelectorAll('.theme-swatch').forEach((s) => s.classList.toggle('active', s.dataset.theme === currentTheme));
+
+// ---- Theme popover (so the picker never pushes Live out of view) ----
+function toggleThemePopover(show) {
+  const pop = document.getElementById('theme-popover');
+  const shouldOpen = show !== undefined ? show : !pop.classList.contains('open');
+  pop.classList.toggle('open', shouldOpen);
+  if (!shouldOpen) openAddThemeForm(false);
+}
+document.addEventListener('click', (e) => {
+  const pop = document.getElementById('theme-popover');
+  if (pop.classList.contains('open') && !pop.contains(e.target) && !e.target.closest('.theme-toggle-btn')) {
+    toggleThemePopover(false);
+  }
+});
+
+// ---- Add a custom theme (name + 2-color gradient) ----
+function openAddThemeForm(show = true) {
+  document.getElementById('add-theme-form').style.display = show ? 'block' : 'none';
+}
+
+function saveCustomTheme() {
+  const name = document.getElementById('new-theme-name').value.trim();
+  const c1 = document.getElementById('new-theme-color1').value;
+  const c2 = document.getElementById('new-theme-color2').value;
+  if (!name) {
+    alert('Please give your theme a name.');
+    return;
+  }
+  const id = 'custom-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
+  const css = `linear-gradient(165deg, ${c1} 0%, ${c2} 100%)`;
+  customThemes.push({ id, name, css });
+  localStorage.setItem('wp_custom_themes', JSON.stringify(customThemes));
+  renderCustomThemeSwatches();
+  openAddThemeForm(false);
+  document.getElementById('new-theme-name').value = '';
+  // Auto-select the just-created theme
+  currentTheme = id;
+  localStorage.setItem('wp_theme', currentTheme);
+  renderCustomThemeSwatches();
+  if (lastStagedState) stageState(lastStagedState);
+}
 
 function nextSlide() {
   if (!currentSongSections.length) return;
