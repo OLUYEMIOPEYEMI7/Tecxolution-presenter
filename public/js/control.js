@@ -110,6 +110,8 @@ function selectSong(song) {
       activeSong = full;
       currentSongSections = full.sections;
       currentSectionIndex = -1;
+      currentDeckSlides = [];
+      currentDeckIndex = -1;
 
       container.innerHTML = '';
       full.sections.forEach((section, idx) => {
@@ -308,6 +310,14 @@ function finishSavingTheme(name, css) {
 }
 
 function nextSlide() {
+  if (currentDeckSlides.length) {
+    if (currentDeckIndex < currentDeckSlides.length - 1) {
+      currentDeckIndex++;
+      highlightDeckSlide();
+      stageState({ type: 'image', url: currentDeckSlides[currentDeckIndex].url });
+    }
+    return;
+  }
   if (!currentSongSections.length) return;
   if (currentSectionIndex < currentSongSections.length - 1) {
     currentSectionIndex++;
@@ -317,6 +327,14 @@ function nextSlide() {
 }
 
 function prevSlide() {
+  if (currentDeckSlides.length) {
+    if (currentDeckIndex > 0) {
+      currentDeckIndex--;
+      highlightDeckSlide();
+      stageState({ type: 'image', url: currentDeckSlides[currentDeckIndex].url });
+    }
+    return;
+  }
   if (!currentSongSections.length) return;
   if (currentSectionIndex > 0) {
     currentSectionIndex--;
@@ -400,17 +418,21 @@ document.getElementById('scripture-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { stageScripture(); e.stopPropagation(); }
 });
 
-// ================= Schedule (service run-list) =================
-let schedule = JSON.parse(localStorage.getItem('wp_schedule') || '[]');
+// ================= Schedule (service run-list, persisted server-side) =================
+let schedule = [];
 
-function saveScheduleToStorage() {
-  localStorage.setItem('wp_schedule', JSON.stringify(schedule));
+function reloadSchedule() {
+  return fetch('/api/schedule')
+    .then((r) => r.json())
+    .then((data) => { schedule = data.items || []; renderSchedule(); })
+    .catch(() => {});
 }
+reloadSchedule();
 
 function renderSchedule() {
   const container = document.getElementById('schedule-list');
   if (schedule.length === 0) {
-    container.innerHTML = '<p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Sched" on a song or scripture to build your service order.</p>';
+    container.innerHTML = '<p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Sched" on a song, scripture, or media item to build your service order.</p>';
     return;
   }
   container.innerHTML = '';
@@ -422,7 +444,7 @@ function renderSchedule() {
       <span class="sched-controls">
         <span onclick="event.stopPropagation(); moveScheduleItem(${idx}, -1)">↑</span>
         <span onclick="event.stopPropagation(); moveScheduleItem(${idx}, 1)">↓</span>
-        <span onclick="event.stopPropagation(); removeScheduleItem(${idx})">✕</span>
+        <span onclick="event.stopPropagation(); removeScheduleItem('${item.id}')">✕</span>
       </span>`;
     div.onclick = () => loadScheduleItem(item);
     div.ondblclick = () => loadScheduleItem(item, true); // double-click: stage and go live in one motion
@@ -430,19 +452,26 @@ function renderSchedule() {
     container.appendChild(div);
   });
 }
-renderSchedule();
+
+function pushScheduleItem(payload) {
+  return fetch('/api/schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+    .then((r) => r.json())
+    .then((item) => { schedule.push(item); renderSchedule(); return item; });
+}
 
 function addSongSlideToSchedule(songId, sectionIdx) {
   const song = activeSong && activeSong.id === songId ? activeSong : null;
   if (!song) return;
   const section = song.sections[sectionIdx];
-  schedule.push({
+  pushScheduleItem({
     displayTitle: `${song.title} — ${section.label}`,
     stateType: 'song',
     state: sectionToState(song, section),
   });
-  saveScheduleToStorage();
-  renderSchedule();
 }
 
 // Adds the ENTIRE song (all its verses/chorus) to the schedule as one row —
@@ -452,32 +481,50 @@ function addWholeSongToSchedule(songId) {
   const song = songs.find((s) => s.id === songId);
   if (!song) return;
   const label = song.hymnNumber ? `${song.title} (#${song.hymnNumber})` : song.title;
-  schedule.push({
+  pushScheduleItem({
     displayTitle: label + (song.artist ? ' — ' + song.artist : ''),
     stateType: 'whole-song',
     songId: song.id,
   });
-  saveScheduleToStorage();
-  renderSchedule();
 }
 
 function addScriptureToSchedule() {
   const ref = document.getElementById('scripture-input').value.trim();
   if (!ref) return;
-  schedule.push({ displayTitle: 'Scripture: ' + ref, stateType: 'scripture-ref', ref });
-  saveScheduleToStorage();
-  renderSchedule();
+  pushScheduleItem({ displayTitle: 'Scripture: ' + ref, stateType: 'scripture-ref', ref });
+}
+
+// Adds a single image or video media item to the schedule.
+function addMediaToSchedule(item) {
+  return pushScheduleItem({
+    displayTitle: (item.kind === 'image' ? '🖼 ' : '🎬 ') + item.title,
+    stateType: item.kind === 'image' ? 'media-image' : 'media-video',
+    url: item.url,
+  });
+}
+
+// Adds a whole PowerPoint deck to the schedule as one row — clicking it loads
+// every slide into the Slides panel for click-through, same pattern as
+// "whole-song" above.
+function addDeckToSchedule(item) {
+  return pushScheduleItem({
+    displayTitle: `📊 ${item.title} (${item.slideCount} slides)`,
+    stateType: 'media-deck',
+    deckId: item.id,
+  });
 }
 
 function loadScheduleItem(item, thenGoLive) {
   if (item.stateType === 'song') {
     currentSongSections = [];
+    currentDeckSlides = [];
     stageState(item.state);
     if (thenGoLive) goLive();
   } else if (item.stateType === 'whole-song') {
     // Load the whole song into the Slides panel (same as clicking it in the
     // library) and auto-stage its first slide so the operator can start
     // clicking through or just hit GO LIVE right away.
+    currentDeckSlides = [];
     document.querySelectorAll('.schedule-item').forEach((el) => el.classList.remove('active'));
     selectSong({ id: item.songId });
     const waitForLoad = setInterval(() => {
@@ -502,9 +549,24 @@ function loadScheduleItem(item, thenGoLive) {
         }
         statusEl.textContent = 'Staged: ' + data.reference;
         currentSongSections = [];
+        currentDeckSlides = [];
         stageState({ type: 'scripture', reference: data.reference, text: data.text, translation: data.translation, background: null });
         if (thenGoLive) goLive();
       });
+  } else if (item.stateType === 'media-image') {
+    currentSongSections = [];
+    currentDeckSlides = [];
+    stageState({ type: 'image', url: item.url });
+    if (thenGoLive) goLive();
+  } else if (item.stateType === 'media-video') {
+    currentSongSections = [];
+    currentDeckSlides = [];
+    stageState({ type: 'video', url: item.url });
+    if (thenGoLive) goLive();
+  } else if (item.stateType === 'media-deck') {
+    currentSongSections = [];
+    document.querySelectorAll('.schedule-item').forEach((el) => el.classList.remove('active'));
+    loadDeckIntoSlidePanel(item.deckId, thenGoLive);
   }
 }
 
@@ -512,21 +574,184 @@ function moveScheduleItem(idx, dir) {
   const newIdx = idx + dir;
   if (newIdx < 0 || newIdx >= schedule.length) return;
   [schedule[idx], schedule[newIdx]] = [schedule[newIdx], schedule[idx]];
-  saveScheduleToStorage();
   renderSchedule();
+  fetch('/api/schedule/reorder', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: schedule.map((s) => s.id) }),
+  });
 }
 
-function removeScheduleItem(idx) {
-  schedule.splice(idx, 1);
-  saveScheduleToStorage();
+function removeScheduleItem(id) {
+  schedule = schedule.filter((s) => s.id !== id);
   renderSchedule();
+  fetch('/api/schedule/' + id, { method: 'DELETE' });
 }
 
 function clearSchedule() {
   if (!confirm('Clear the whole schedule?')) return;
   schedule = [];
-  saveScheduleToStorage();
   renderSchedule();
+  fetch('/api/schedule', { method: 'DELETE' });
+}
+
+// ================= Media library (images, video, PowerPoint decks) =================
+let currentDeckSlides = [];
+let currentDeckIndex = -1;
+
+document.getElementById('media-tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-media-tab]');
+  if (!btn) return;
+  document.querySelectorAll('#media-tabs .song-tab').forEach((t) => t.classList.remove('active'));
+  btn.classList.add('active');
+  ['image', 'video', 'pptx'].forEach((tab) => {
+    document.getElementById('media-tab-' + tab).style.display = tab === btn.dataset.mediaTab ? 'block' : 'none';
+  });
+});
+
+function setMediaStatus(text) {
+  document.getElementById('media-status').textContent = text;
+}
+
+function uploadMediaImage() {
+  const fileInput = document.getElementById('media-image-file');
+  const file = fileInput.files[0];
+  if (!file) { alert('Choose an image file first.'); return; }
+  const title = document.getElementById('media-image-title').value.trim();
+  const formData = new FormData();
+  formData.append('file', file);
+  if (title) formData.append('title', title);
+  setMediaStatus('Uploading…');
+  fetch('/api/media/image', { method: 'POST', body: formData })
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.error) { setMediaStatus('Failed: ' + data.error); return; }
+      setMediaStatus('Uploaded "' + data.title + '".');
+      fileInput.value = '';
+      document.getElementById('media-image-title').value = '';
+      reloadMediaLibrary();
+    })
+    .catch((e) => setMediaStatus('Upload failed: ' + e.message));
+}
+
+function uploadMediaVideo() {
+  const fileInput = document.getElementById('media-video-file');
+  const file = fileInput.files[0];
+  const url = document.getElementById('media-video-url').value.trim();
+  const title = document.getElementById('media-video-title').value.trim();
+  if (!file && !url) { alert('Choose a video file or paste a video link.'); return; }
+  const formData = new FormData();
+  if (file) formData.append('file', file);
+  if (url) formData.append('url', url);
+  if (title) formData.append('title', title);
+  setMediaStatus('Adding video…');
+  fetch('/api/media/video', { method: 'POST', body: formData })
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.error) { setMediaStatus('Failed: ' + data.error); return; }
+      setMediaStatus('Added "' + data.title + '".');
+      fileInput.value = '';
+      document.getElementById('media-video-url').value = '';
+      document.getElementById('media-video-title').value = '';
+      reloadMediaLibrary();
+    })
+    .catch((e) => setMediaStatus('Failed: ' + e.message));
+}
+
+function uploadMediaPptx() {
+  const fileInput = document.getElementById('media-pptx-file');
+  const file = fileInput.files[0];
+  if (!file) { alert('Choose a .ppt or .pptx file first.'); return; }
+  const title = document.getElementById('media-pptx-title').value.trim();
+  const formData = new FormData();
+  formData.append('file', file);
+  if (title) formData.append('title', title);
+  setMediaStatus('Uploading and converting slides — this can take a little while…');
+  fetch('/api/media/pptx', { method: 'POST', body: formData })
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.error) { setMediaStatus('Failed: ' + data.error); return; }
+      setMediaStatus(`Converted "${data.title}" — ${data.slideCount} slides. Added to schedule.`);
+      fileInput.value = '';
+      document.getElementById('media-pptx-title').value = '';
+      reloadMediaLibrary();
+      addDeckToSchedule(data); // the whole point of "upload this for the schedule" — one step, not two
+    })
+    .catch((e) => setMediaStatus('Failed: ' + e.message));
+}
+
+function reloadMediaLibrary() {
+  return fetch('/api/media')
+    .then((r) => r.json())
+    .then((data) => renderMediaLibrary(data.items || []));
+}
+reloadMediaLibrary();
+
+function renderMediaLibrary(items) {
+  const container = document.getElementById('media-library');
+  if (items.length === 0) {
+    container.innerHTML = '<p style="color:#666; font-size:11px; margin:0;">No media uploaded yet.</p>';
+    return;
+  }
+  const ICON = { image: '🖼', video: '🎬', deck: '📊' };
+  container.innerHTML = items.map((item) => `
+    <div style="display:flex; align-items:center; justify-content:space-between; background:#0b0b1a; border:1px solid #2a2a44; border-radius:6px; padding:6px 8px; font-size:12px;">
+      <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ICON[item.kind] || ''} ${escapeHtmlLocal(item.title || 'Untitled')}${item.kind === 'deck' ? ` (${item.slideCount} slides)` : ''}</span>
+      <span style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
+        <span onclick='mediaLibAction("${item.id}", "sched")' class="song-sched-btn" title="Add to schedule">+ Sched</span>
+        <span onclick='mediaLibAction("${item.id}", "del")' style="color:#a3303c; font-size:12px; cursor:pointer;" title="Delete">✕</span>
+      </span>
+    </div>
+  `).join('');
+  window._mediaLibItems = items;
+}
+
+function mediaLibAction(id, action) {
+  const item = (window._mediaLibItems || []).find((i) => i.id === id);
+  if (!item) return;
+  if (action === 'sched') {
+    if (item.kind === 'deck') addDeckToSchedule(item);
+    else addMediaToSchedule(item);
+  } else if (action === 'del') {
+    if (!confirm('Delete "' + item.title + '" from the media library?')) return;
+    fetch('/api/media/' + id, { method: 'DELETE' }).then(() => reloadMediaLibrary());
+  }
+}
+
+// Loads a PowerPoint deck's slides into the Slides panel for click-through,
+// exactly like clicking a song does — Enter/arrow keys and double-click all
+// work the same way once a deck is loaded.
+function loadDeckIntoSlidePanel(deckId, thenGoLive) {
+  const container = document.getElementById('slide-list');
+  container.innerHTML = '<p style="color:#666; font-size:13px;">Loading slides…</p>';
+  fetch('/api/media/deck/' + deckId)
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.error) {
+        container.innerHTML = '<p style="color:#a3303c; font-size:13px;">Could not load this deck.</p>';
+        return;
+      }
+      currentDeckSlides = data.slides;
+      currentDeckIndex = 0;
+      container.innerHTML = '';
+      data.slides.forEach((slide, idx) => {
+        const div = document.createElement('div');
+        div.className = 'slide-item';
+        div.innerHTML = `<div class="slide-label">Slide ${idx + 1} of ${data.slides.length}</div>`;
+        div.onclick = () => { currentDeckIndex = idx; highlightDeckSlide(); stageState({ type: 'image', url: slide.url }); };
+        div.ondblclick = () => { currentDeckIndex = idx; highlightDeckSlide(); stageState({ type: 'image', url: slide.url }); goLive(); };
+        div.title = 'Click to stage · double-click to go live instantly';
+        container.appendChild(div);
+      });
+      highlightDeckSlide();
+      stageState({ type: 'image', url: data.slides[0].url });
+      if (thenGoLive) goLive();
+    })
+    .catch(() => { container.innerHTML = '<p style="color:#a3303c; font-size:13px;">Error loading deck.</p>'; });
+}
+
+function highlightDeckSlide() {
+  document.querySelectorAll('.slide-item').forEach((el, i) => el.classList.toggle('active', i === currentDeckIndex));
 }
 
 // ================= Voice Detect (Phase 2) =================

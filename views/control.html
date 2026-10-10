@@ -53,6 +53,45 @@
         <button class="secondary" onclick="clearSchedule()" style="font-size:11px;">Clear Schedule</button>
       </div>
 
+      <h2 style="margin-top:24px;">🖼 Media (Images · Video · PowerPoint)</h2>
+      <div class="scripture-box">
+        <p style="font-size:11px; color:#888; margin:0 0 8px;">
+          Add images, video clips/links, or a PowerPoint deck — each slide of a
+          PowerPoint is converted automatically so it can be clicked through
+          and projected just like a song's slides.
+        </p>
+
+        <div class="media-tabs" id="media-tabs">
+          <button class="song-tab active" data-media-tab="image">Image</button>
+          <button class="song-tab" data-media-tab="video">Video</button>
+          <button class="song-tab" data-media-tab="pptx">PowerPoint</button>
+        </div>
+
+        <div id="media-tab-image">
+          <input type="file" id="media-image-file" accept="image/*" style="font-size:11px; color:#999; width:100%;" />
+          <input type="text" id="media-image-title" placeholder="Title (optional)" class="form-input" style="margin-top:6px; font-size:12px; padding:7px 10px;" />
+          <button onclick="uploadMediaImage()" style="margin-top:8px; width:100%;">Upload Image</button>
+        </div>
+
+        <div id="media-tab-video" style="display:none;">
+          <input type="file" id="media-video-file" accept="video/*" style="font-size:11px; color:#999; width:100%;" />
+          <p style="font-size:10px; color:#666; margin:6px 0;">— or paste a link (YouTube, Vimeo, or a direct .mp4 link) —</p>
+          <input type="text" id="media-video-url" placeholder="https://youtube.com/watch?v=..." class="form-input" style="font-size:12px; padding:7px 10px;" />
+          <input type="text" id="media-video-title" placeholder="Title (optional)" class="form-input" style="margin-top:6px; font-size:12px; padding:7px 10px;" />
+          <button onclick="uploadMediaVideo()" style="margin-top:8px; width:100%;">Add Video</button>
+        </div>
+
+        <div id="media-tab-pptx" style="display:none;">
+          <input type="file" id="media-pptx-file" accept=".ppt,.pptx" style="font-size:11px; color:#999; width:100%;" />
+          <input type="text" id="media-pptx-title" placeholder="Title (optional)" class="form-input" style="margin-top:6px; font-size:12px; padding:7px 10px;" />
+          <button onclick="uploadMediaPptx()" style="margin-top:8px; width:100%;">Upload &amp; Convert</button>
+          <p style="font-size:10px; color:#666; margin:6px 0 0;">Conversion takes a few seconds per deck — larger decks take longer.</p>
+        </div>
+
+        <p id="media-status" style="font-size:12px; color:#999; margin-top:8px;"></p>
+        <div id="media-library" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
+
       <h2 style="margin-top:24px;">Scripture</h2>
       <div class="scripture-box">
         <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" />

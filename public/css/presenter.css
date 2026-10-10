@@ -285,6 +285,25 @@ html, body { margin: 0; padding: 0; font-family: 'Trebuchet MS', 'Segoe UI', san
 .stage.blank .stage-content,
 .stage.blank .stage-label { opacity: 0; }
 
+.stage-media-img,
+.stage-media-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  z-index: 1;
+}
+.stage.image .stage-content,
+.stage.image .stage-label,
+.stage.image .stage-bg,
+.stage.video .stage-content,
+.stage.video .stage-label,
+.stage.video .stage-bg { display: none; }
+.stage.image .stage-overlay,
+.stage.video .stage-overlay { background: transparent; }
+
 .standby-screen {
   position: absolute;
   inset: 0;
@@ -593,7 +612,7 @@ button.danger:hover { background: #c23a48; }
 .panel::-webkit-scrollbar-thumb:hover, .modal-body::-webkit-scrollbar-thumb:hover { background: var(--deep-gold); }
 
 /* ============== Song library: filter tabs ============== */
-.song-tabs {
+.song-tabs, .media-tabs {
   display: flex;
   gap: 4px;
   margin-bottom: 10px;

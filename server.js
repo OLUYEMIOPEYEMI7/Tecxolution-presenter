@@ -49,6 +49,25 @@ async function initDb() {
       data BYTEA,
       created_at TIMESTAMPTZ DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS wp_media (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      parent_id TEXT,
+      slide_index INT,
+      title TEXT,
+      mimetype TEXT,
+      data BYTEA,
+      external_url TEXT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS wp_schedule (
+      id TEXT PRIMARY KEY,
+      idx INT NOT NULL,
+      display_title TEXT NOT NULL,
+      state_type TEXT NOT NULL,
+      payload JSONB,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
   `);
   console.log('Connected to persistent Postgres storage.');
 }
@@ -60,6 +79,281 @@ const upload = multer({
   limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
   fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
 });
+
+// ---------------------------------------------------------------------------
+// Media library: images, video clips/links, and PowerPoint decks (converted
+// to a sequence of slide images server-side via LibreOffice + poppler, so
+// they display like any other EasyWorship-style slide — no PowerPoint viewer
+// needed on the projection screen). Persisted in Postgres (BYTEA) with a
+// local-disk fallback for dev, same pattern as theme images above.
+// ---------------------------------------------------------------------------
+const { execFile } = require('child_process');
+const os = require('os');
+
+const uploadMediaImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+const uploadMediaVideo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 60 * 1024 * 1024 }, // 60MB — for longer clips, paste a link instead
+  fileFilter: (req, file, cb) => cb(null, /^video\//.test(file.mimetype)),
+});
+const uploadPptx = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(pptx|ppt)$/i.test(file.originalname) ||
+      /presentationml|vnd\.ms-powerpoint/.test(file.mimetype);
+    cb(null, ok);
+  },
+});
+
+const mediaDiskDir = path.join(__dirname, 'public', 'images', 'media-library');
+fs.mkdirSync(mediaDiskDir, { recursive: true });
+const mediaJsonPath = path.join(__dirname, 'data', 'media.json');
+
+function loadMediaJson() {
+  if (!fs.existsSync(mediaJsonPath)) return { items: [] };
+  return JSON.parse(fs.readFileSync(mediaJsonPath, 'utf8'));
+}
+function saveMediaJson(data) {
+  fs.writeFileSync(mediaJsonPath, JSON.stringify(data, null, 2));
+}
+
+function newMediaId(prefix) {
+  return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// Saves one media item (image/video/deck/deck-slide). `buffer` is optional
+// (decks themselves hold no bytes, only their deck-slide children do).
+async function saveMediaRow({ kind, parentId, slideIndex, title, mimetype, buffer, externalUrl }) {
+  const id = newMediaId(kind);
+  if (pool) {
+    await pool.query(
+      `INSERT INTO wp_media (id, kind, parent_id, slide_index, title, mimetype, data, external_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, kind, parentId || null, slideIndex ?? null, title || null, mimetype || null, buffer || null, externalUrl || null]
+    );
+    return id;
+  }
+  // Disk fallback
+  const data = loadMediaJson();
+  let diskFilename = null;
+  if (buffer) {
+    const ext = mimetype && mimetype.includes('png') ? '.png' : (mimetype && mimetype.split('/')[1] ? '.' + mimetype.split('/')[1] : '.bin');
+    diskFilename = id + ext;
+    fs.writeFileSync(path.join(mediaDiskDir, diskFilename), buffer);
+  }
+  data.items.push({ id, kind, parentId: parentId || null, slideIndex: slideIndex ?? null, title: title || null, mimetype: mimetype || null, diskFilename, externalUrl: externalUrl || null, createdAt: Date.now() });
+  saveMediaJson(data);
+  return id;
+}
+
+async function listMediaLibrary() {
+  if (pool) {
+    const { rows } = await pool.query(`
+      SELECT m.id, m.kind, m.title, m.mimetype, m.external_url,
+        (SELECT count(*) FROM wp_media s WHERE s.parent_id = m.id) AS slide_count
+      FROM wp_media m
+      WHERE m.kind IN ('image','video','deck')
+      ORDER BY m.created_at DESC
+      LIMIT 100
+    `);
+    return rows.map((r) => ({
+      id: r.id, kind: r.kind, title: r.title, mimetype: r.mimetype,
+      url: r.kind === 'video' && r.external_url ? r.external_url : `/api/media/file/${r.id}`,
+      external: !!(r.kind === 'video' && r.external_url),
+      slideCount: Number(r.slide_count) || 0,
+    }));
+  }
+  const data = loadMediaJson();
+  const topLevel = data.items.filter((i) => ['image', 'video', 'deck'].includes(i.kind)).sort((a, b) => b.createdAt - a.createdAt);
+  return topLevel.map((i) => ({
+    id: i.id, kind: i.kind, title: i.title, mimetype: i.mimetype,
+    url: i.kind === 'video' && i.externalUrl ? i.externalUrl : `/api/media/file/${i.id}`,
+    external: !!(i.kind === 'video' && i.externalUrl),
+    slideCount: data.items.filter((s) => s.parentId === i.id).length,
+  }));
+}
+
+async function getMediaFile(id) {
+  if (pool) {
+    const { rows } = await pool.query('SELECT mimetype, data, external_url FROM wp_media WHERE id = $1', [id]);
+    if (rows.length === 0) return null;
+    return { mimetype: rows[0].mimetype, data: rows[0].data, externalUrl: rows[0].external_url };
+  }
+  const data = loadMediaJson();
+  const item = data.items.find((i) => i.id === id);
+  if (!item) return null;
+  if (item.externalUrl) return { externalUrl: item.externalUrl };
+  if (!item.diskFilename) return null;
+  return { mimetype: item.mimetype, data: fs.readFileSync(path.join(mediaDiskDir, item.diskFilename)) };
+}
+
+async function getDeckSlides(deckId) {
+  if (pool) {
+    const { rows } = await pool.query(
+      'SELECT id, slide_index FROM wp_media WHERE parent_id = $1 AND kind = $2 ORDER BY slide_index',
+      [deckId, 'deck-slide']
+    );
+    return rows.map((r) => ({ id: r.id, url: `/api/media/file/${r.id}` }));
+  }
+  const data = loadMediaJson();
+  return data.items
+    .filter((i) => i.parentId === deckId && i.kind === 'deck-slide')
+    .sort((a, b) => a.slideIndex - b.slideIndex)
+    .map((i) => ({ id: i.id, url: `/api/media/file/${i.id}` }));
+}
+
+async function deleteMediaItem(id) {
+  if (pool) {
+    const { rows } = await pool.query('SELECT kind FROM wp_media WHERE id = $1', [id]);
+    if (rows.length === 0) return false;
+    if (rows[0].kind === 'deck') await pool.query('DELETE FROM wp_media WHERE parent_id = $1', [id]);
+    const { rowCount } = await pool.query('DELETE FROM wp_media WHERE id = $1', [id]);
+    return rowCount > 0;
+  }
+  const data = loadMediaJson();
+  const item = data.items.find((i) => i.id === id);
+  if (!item) return false;
+  const toDelete = data.items.filter((i) => i.id === id || i.parentId === id);
+  toDelete.forEach((i) => { if (i.diskFilename) { try { fs.unlinkSync(path.join(mediaDiskDir, i.diskFilename)); } catch (e) {} } });
+  data.items = data.items.filter((i) => i.id !== id && i.parentId !== id);
+  saveMediaJson(data);
+  return true;
+}
+
+// Converts an uploaded .pptx/.ppt buffer into one PNG image per slide via
+// LibreOffice (headless, pptx→pdf) then poppler's pdftoppm (pdf→PNGs).
+// Some PPTX files (e.g. exported by AI slide-deck tools) produce
+// OOXML that LibreOffice's importer rejects outright even though it's a
+// perfectly valid zip — re-saving once through python-pptx normalizes the
+// XML and reliably fixes this before handing it to LibreOffice.
+// Requires: soffice (LibreOffice), pdftoppm (poppler-utils), and python3
+// with the "pptx" package — NOT available on Render's native Node runtime;
+// this only works where those binaries are installed (e.g. a Docker deploy).
+function convertDeckToSlideImages(buffer, originalExt) {
+  return new Promise((resolve, reject) => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-'));
+    const srcPath = path.join(workDir, 'input' + originalExt);
+    const normalizedPath = path.join(workDir, 'normalized.pptx');
+    fs.writeFileSync(srcPath, buffer);
+
+    const normalizeScript = `
+import sys
+from pptx import Presentation
+prs = Presentation(sys.argv[1])
+prs.save(sys.argv[2])
+`;
+    const normalizeScriptPath = path.join(workDir, 'normalize.py');
+    fs.writeFileSync(normalizeScriptPath, normalizeScript);
+
+    execFile('python3', [normalizeScriptPath, srcPath, normalizedPath], { timeout: 30000 }, (normErr) => {
+      // If normalization isn't available or fails, fall back to the raw
+      // upload — some files will still convert fine without it.
+      const convertSrc = (!normErr && fs.existsSync(normalizedPath)) ? normalizedPath : srcPath;
+      execFile('soffice', ['--headless', '--norestore', '-env:UserInstallation=file://' + path.join(workDir, 'lo_profile'), '--convert-to', 'pdf', '--outdir', workDir, convertSrc], { timeout: 90000 }, (err) => {
+        if (err) { cleanup(); return reject(new Error('PowerPoint conversion failed: ' + err.message)); }
+        const pdfPath = path.join(workDir, path.basename(convertSrc, path.extname(convertSrc)) + '.pdf');
+        if (!fs.existsSync(pdfPath)) { cleanup(); return reject(new Error('Conversion produced no PDF')); }
+        const slidePrefix = path.join(workDir, 'slide');
+        execFile('pdftoppm', ['-png', '-r', '110', pdfPath, slidePrefix], { timeout: 90000 }, (err2) => {
+          if (err2) { cleanup(); return reject(new Error('Slide image export failed: ' + err2.message)); }
+          try {
+            const files = fs.readdirSync(workDir)
+              .filter((f) => f.startsWith('slide') && f.endsWith('.png'))
+              .sort((a, b) => {
+                const na = parseInt(a.match(/(\d+)/)[1], 10);
+                const nb = parseInt(b.match(/(\d+)/)[1], 10);
+                return na - nb;
+              });
+            if (files.length === 0) { cleanup(); return reject(new Error('No slides were produced')); }
+            const buffers = files.map((f) => fs.readFileSync(path.join(workDir, f)));
+            cleanup();
+            resolve(buffers);
+          } catch (e) {
+            cleanup();
+            reject(e);
+          }
+        });
+      });
+    });
+    function cleanup() {
+      try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
+    }
+  });
+}
+
+// ---- Schedule (persisted server-side so it's shared across every device/
+// browser that opens the control room, and so it can be built ahead of time
+// — e.g. the night before a service — not just from the operator's own machine) ----
+const schedulePath = path.join(__dirname, 'data', 'schedule.json');
+function loadScheduleJson() {
+  if (!fs.existsSync(schedulePath)) return { items: [] };
+  return JSON.parse(fs.readFileSync(schedulePath, 'utf8'));
+}
+function saveScheduleJson(data) {
+  fs.writeFileSync(schedulePath, JSON.stringify(data, null, 2));
+}
+
+async function loadScheduleList() {
+  if (pool) {
+    try {
+      const { rows } = await pool.query('SELECT id, display_title, state_type, payload FROM wp_schedule ORDER BY idx');
+      return rows.map((r) => ({ id: r.id, displayTitle: r.display_title, stateType: r.state_type, ...r.payload }));
+    } catch (e) {
+      console.error('DB read failed for schedule, falling back to local file:', e.message);
+    }
+  }
+  return loadScheduleJson().items;
+}
+
+async function addScheduleRow({ displayTitle, stateType, ...payload }) {
+  const id = newMediaId('sched');
+  if (pool) {
+    const { rows } = await pool.query('SELECT COALESCE(MAX(idx), -1) + 1 AS next FROM wp_schedule');
+    const idx = rows[0].next;
+    await pool.query('INSERT INTO wp_schedule (id, idx, display_title, state_type, payload) VALUES ($1,$2,$3,$4,$5)', [
+      id, idx, displayTitle, stateType, JSON.stringify(payload),
+    ]);
+    return { id, displayTitle, stateType, ...payload };
+  }
+  const data = loadScheduleJson();
+  const item = { id, displayTitle, stateType, ...payload };
+  data.items.push(item);
+  saveScheduleJson(data);
+  return item;
+}
+
+async function removeScheduleRow(id) {
+  if (pool) {
+    const { rowCount } = await pool.query('DELETE FROM wp_schedule WHERE id = $1', [id]);
+    return rowCount > 0;
+  }
+  const data = loadScheduleJson();
+  const before = data.items.length;
+  data.items = data.items.filter((i) => i.id !== id);
+  saveScheduleJson(data);
+  return data.items.length < before;
+}
+
+async function clearScheduleRows() {
+  if (pool) { await pool.query('DELETE FROM wp_schedule'); return; }
+  saveScheduleJson({ items: [] });
+}
+
+async function reorderScheduleRows(orderedIds) {
+  if (pool) {
+    await Promise.all(orderedIds.map((id, idx) => pool.query('UPDATE wp_schedule SET idx = $1 WHERE id = $2', [idx, id])));
+    return;
+  }
+  const data = loadScheduleJson();
+  const byId = Object.fromEntries(data.items.map((i) => [i.id, i]));
+  data.items = orderedIds.map((id) => byId[id]).filter(Boolean);
+  saveScheduleJson(data);
+}
 
 const songsPath = path.join(__dirname, 'data', 'songs.json');
 const hymnsPath = path.join(__dirname, 'data', 'hymns.json');
@@ -479,6 +773,158 @@ app.delete('/api/announcements/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not delete: ' + e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Media library API — images, videos (uploaded clip or pasted link), and
+// PowerPoint decks (converted to a sequence of slide images on upload).
+// ---------------------------------------------------------------------------
+app.get('/api/media', async (req, res) => {
+  try {
+    res.json({ items: await listMediaLibrary() });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load media library: ' + e.message });
+  }
+});
+
+app.get('/api/media/deck/:id', async (req, res) => {
+  try {
+    const slides = await getDeckSlides(req.params.id);
+    if (slides.length === 0) return res.status(404).json({ error: 'Deck not found or empty' });
+    res.json({ id: req.params.id, slides });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load deck: ' + e.message });
+  }
+});
+
+app.get('/api/media/file/:id', async (req, res) => {
+  try {
+    const file = await getMediaFile(req.params.id);
+    if (!file) return res.status(404).end();
+    if (file.externalUrl) return res.redirect(file.externalUrl);
+    res.set('Content-Type', file.mimetype || 'application/octet-stream');
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(file.data);
+  } catch (e) {
+    res.status(500).end();
+  }
+});
+
+app.post('/api/media/image', uploadMediaImage.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded (must be an image file, max 15MB)' });
+  try {
+    const title = (req.body.title || req.file.originalname || 'Image').trim();
+    const id = await saveMediaRow({ kind: 'image', title, mimetype: req.file.mimetype, buffer: req.file.buffer });
+    res.json({ id, kind: 'image', title, url: `/api/media/file/${id}` });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save image: ' + e.message });
+  }
+});
+
+// Video: either an uploaded clip (field "file") or a pasted link (body.url —
+// YouTube/Vimeo/direct .mp4 etc.), so a long clip doesn't have to be uploaded
+// at all — just linked, EasyWorship-style "media from web" equivalent.
+app.post('/api/media/video', uploadMediaVideo.single('file'), async (req, res) => {
+  const title = (req.body.title || (req.file && req.file.originalname) || 'Video').trim();
+  try {
+    if (req.file) {
+      const id = await saveMediaRow({ kind: 'video', title, mimetype: req.file.mimetype, buffer: req.file.buffer });
+      res.json({ id, kind: 'video', title, url: `/api/media/file/${id}` });
+    } else if (req.body.url && req.body.url.trim()) {
+      const id = await saveMediaRow({ kind: 'video', title, externalUrl: req.body.url.trim() });
+      res.json({ id, kind: 'video', title, url: req.body.url.trim(), external: true });
+    } else {
+      res.status(400).json({ error: 'Provide a video file (max 60MB) or a video link' });
+    }
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save video: ' + e.message });
+  }
+});
+
+// PowerPoint upload: converts every slide to a PNG (via LibreOffice + poppler)
+// and stores them as a "deck" so the presenter can click through it exactly
+// like a song's slides — no PowerPoint software needed on the display machine.
+app.post('/api/media/pptx', uploadPptx.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No PowerPoint file uploaded (.ppt/.pptx, max 50MB)' });
+  try {
+    const title = (req.body.title || req.file.originalname.replace(/\.(pptx|ppt)$/i, '')).trim();
+    const ext = /\.ppt$/i.test(req.file.originalname) ? '.ppt' : '.pptx';
+    const slideBuffers = await convertDeckToSlideImages(req.file.buffer, ext);
+    const deckId = await saveMediaRow({ kind: 'deck', title, mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+    const slides = [];
+    for (let i = 0; i < slideBuffers.length; i++) {
+      const slideId = await saveMediaRow({ kind: 'deck-slide', parentId: deckId, slideIndex: i, mimetype: 'image/png', buffer: slideBuffers[i] });
+      slides.push({ id: slideId, url: `/api/media/file/${slideId}` });
+    }
+    res.json({ id: deckId, kind: 'deck', title, slideCount: slides.length, slides });
+  } catch (e) {
+    console.error('PPTX conversion error:', e.message);
+    res.status(500).json({ error: e.message || 'Could not convert PowerPoint file' });
+  }
+});
+
+app.delete('/api/media/:id', async (req, res) => {
+  try {
+    const deleted = await deleteMediaItem(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not delete: ' + e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Schedule API — the service run-list. Persisted server-side (not just in
+// the operator's browser localStorage) so it can be built ahead of time from
+// any device and is ready the moment the control room is opened.
+// ---------------------------------------------------------------------------
+app.get('/api/schedule', async (req, res) => {
+  try {
+    res.json({ items: await loadScheduleList() });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not load schedule: ' + e.message });
+  }
+});
+
+app.post('/api/schedule', async (req, res) => {
+  const { displayTitle, stateType } = req.body;
+  if (!displayTitle || !stateType) return res.status(400).json({ error: 'displayTitle and stateType are required' });
+  try {
+    const item = await addScheduleRow(req.body);
+    res.json(item);
+  } catch (e) {
+    res.status(500).json({ error: 'Could not add to schedule: ' + e.message });
+  }
+});
+
+app.put('/api/schedule/reorder', async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids array required' });
+  try {
+    await reorderScheduleRows(ids);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not reorder: ' + e.message });
+  }
+});
+
+app.delete('/api/schedule/:id', async (req, res) => {
+  try {
+    const deleted = await removeScheduleRow(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not remove: ' + e.message });
+  }
+});
+
+app.delete('/api/schedule', async (req, res) => {
+  try {
+    await clearScheduleRows();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not clear schedule: ' + e.message });
   }
 });
 
