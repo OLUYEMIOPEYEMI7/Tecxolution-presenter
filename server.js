@@ -635,6 +635,7 @@ app.get('/api/scripture', async (req, res) => {
           translation: (data.translation_name || version.toUpperCase()),
         });
       } catch (e) {
+        console.error('bible-api.com parse failure. status=' + apiRes.statusCode + ' body=' + body.slice(0, 500));
         res.status(502).json({ error: 'Could not parse scripture response' });
       }
     });
