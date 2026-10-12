@@ -598,7 +598,11 @@ app.delete('/api/songs/:id', async (req, res) => {
 });
 
 // Scripture lookup. Three sources:
-//  - bible-api.com for free public-domain translations (kjv, web, asv, etc.)
+//  - bible.helloao.org for free public-domain translations (kjv, web, asv,
+//    etc.) — a CDN-backed static-JSON API, no key, no rate limit. (Switched
+//    from bible-api.com after it started returning 403 Forbidden to Render's
+//    cloud IP range — worked fine from a residential/dev IP, blocked in
+//    production; this one is confirmed to work from Render's Docker env.)
 //  - api.nlt.to for NLT — Tyndale's own API, explicitly free for non-commercial
 //    / ministry use (works anonymously, no key required, within fair limits).
 //  - api.scripture.api.bible for NIV / AMP / MSG — needs a registered API key
@@ -608,6 +612,79 @@ const API_BIBLE_IDS = {
   amp: 'a81b73293d3080c9-01',
   msg: '6f11a7de016f942e-01',
 };
+
+// bible.helloao.org translation IDs for each free public-domain version code.
+const HELLOAO_TRANSLATIONS = {
+  kjv: { id: 'eng_kjv', name: 'King James Version' },
+  web: { id: 'eng_web', name: 'World English Bible' },
+  webbe: { id: 'eng_webpb', name: 'World English Bible (British)' },
+  asv: { id: 'eng_asv', name: 'American Standard Version' },
+  bbe: { id: 'eng_bbe', name: 'Bible in Basic English' },
+  darby: { id: 'eng_dby', name: 'Darby Bible' },
+  ylt: { id: 'eng_ylt', name: "Young's Literal Translation" },
+};
+
+// Standard USFM/USX 3-letter book codes, in Bible order — bible.helloao.org
+// uses these directly as path segments (GEN, EXO, ... JHN, ... REV).
+const BIBLE_BOOK_CODES = {
+  genesis: 'GEN', exodus: 'EXO', leviticus: 'LEV', numbers: 'NUM', deuteronomy: 'DEU',
+  joshua: 'JOS', judges: 'JDG', ruth: 'RUT', '1samuel': '1SA', '2samuel': '2SA',
+  '1kings': '1KI', '2kings': '2KI', '1chronicles': '1CH', '2chronicles': '2CH',
+  ezra: 'EZR', nehemiah: 'NEH', esther: 'EST', job: 'JOB', psalm: 'PSA', psalms: 'PSA',
+  proverbs: 'PRO', ecclesiastes: 'ECC', songofsolomon: 'SNG', song: 'SNG', isaiah: 'ISA',
+  jeremiah: 'JER', lamentations: 'LAM', ezekiel: 'EZK', daniel: 'DAN', hosea: 'HOS',
+  joel: 'JOL', amos: 'AMO', obadiah: 'OBA', jonah: 'JON', micah: 'MIC', nahum: 'NAM',
+  habakkuk: 'HAB', zephaniah: 'ZEP', haggai: 'HAG', zechariah: 'ZEC', malachi: 'MAL',
+  matthew: 'MAT', mark: 'MRK', luke: 'LUK', john: 'JHN', acts: 'ACT', romans: 'ROM',
+  '1corinthians': '1CO', '2corinthians': '2CO', galatians: 'GAL', ephesians: 'EPH',
+  philippians: 'PHP', colossians: 'COL', '1thessalonians': '1TH', '2thessalonians': '2TH',
+  '1timothy': '1TI', '2timothy': '2TI', titus: 'TIT', philemon: 'PHM', hebrews: 'HEB',
+  james: 'JAS', '1peter': '1PE', '2peter': '2PE', '1john': '1JN', '2john': '2JN',
+  '3john': '3JN', jude: 'JUD', revelation: 'REV',
+};
+
+// Parses "John 3:16", "1 John 3:16-18", "Song of Solomon 2:1" etc. into
+// {bookCode, chapter, verseStart, verseEnd}. Returns null if unparseable.
+function parseBibleReference(ref) {
+  const m = ref.trim().match(/^((?:[1-3]\s*)?[A-Za-z][A-Za-z\s]*?)\s+(\d+)\s*:\s*(\d+)(?:\s*-\s*(\d+))?$/);
+  if (!m) return null;
+  const bookKey = m[1].toLowerCase().replace(/\s+/g, '');
+  const bookCode = BIBLE_BOOK_CODES[bookKey];
+  if (!bookCode) return null;
+  const chapter = parseInt(m[2], 10);
+  const verseStart = parseInt(m[3], 10);
+  const verseEnd = m[4] ? parseInt(m[4], 10) : verseStart;
+  return { bookCode, chapter, verseStart, verseEnd };
+}
+
+function fetchHelloAoScripture(ref, version, res) {
+  const t = HELLOAO_TRANSLATIONS[version];
+  const parsed = parseBibleReference(ref);
+  if (!parsed) return res.status(400).json({ error: 'Could not understand reference "' + ref + '" — try a format like "John 3:16" or "John 3:16-18"' });
+  const url = `https://bible.helloao.org/api/${t.id}/${parsed.bookCode}/${parsed.chapter}.json`;
+  https.get(url, (apiRes) => {
+    let body = '';
+    apiRes.on('data', (chunk) => (body += chunk));
+    apiRes.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const content = (data.chapter && data.chapter.content) || [];
+        const verses = content.filter((item) => item.type === 'verse' && item.number >= parsed.verseStart && item.number <= parsed.verseEnd);
+        if (verses.length === 0) return res.status(404).json({ error: 'Reference not found: ' + ref });
+        const text = verses
+          .map((v) => v.content.map((c) => (typeof c === 'string' ? c : c.text || '')).join(' '))
+          .join(' ')
+          .replace(/¶\s*/g, '') // KJV paragraph markers — not part of the verse text
+          .replace(/\s+/g, ' ')
+          .trim();
+        res.json({ reference: ref, text, translation: t.name });
+      } catch (e) {
+        console.error('bible.helloao.org parse failure. status=' + apiRes.statusCode + ' body=' + body.slice(0, 300));
+        res.status(502).json({ error: 'Could not parse scripture response' });
+      }
+    });
+  }).on('error', (e) => res.status(502).json({ error: e.message }));
+}
 
 app.get('/api/scripture', async (req, res) => {
   const ref = (req.query.ref || '').trim();
@@ -620,26 +697,10 @@ app.get('/api/scripture', async (req, res) => {
   if (API_BIBLE_IDS[version]) {
     return fetchApiBibleScripture(ref, version, res);
   }
-
-  const url = `https://bible-api.com/${encodeURIComponent(ref)}?translation=${encodeURIComponent(version)}`;
-  https.get(url, (apiRes) => {
-    let body = '';
-    apiRes.on('data', (chunk) => (body += chunk));
-    apiRes.on('end', () => {
-      try {
-        const data = JSON.parse(body);
-        if (data.error) return res.status(404).json({ error: data.error });
-        res.json({
-          reference: data.reference,
-          text: data.text.trim().replace(/\n/g, ' ').replace(/\s+/g, ' '),
-          translation: (data.translation_name || version.toUpperCase()),
-        });
-      } catch (e) {
-        console.error('bible-api.com parse failure. status=' + apiRes.statusCode + ' body=' + body.slice(0, 500));
-        res.status(502).json({ error: 'Could not parse scripture response' });
-      }
-    });
-  }).on('error', (e) => res.status(502).json({ error: e.message }));
+  if (HELLOAO_TRANSLATIONS[version]) {
+    return fetchHelloAoScripture(ref, version, res);
+  }
+  return res.status(400).json({ error: 'Unknown Bible version: ' + version });
 });
 
 // API.Bible — used for NIV, AMP, MSG under the user's own free, registered
