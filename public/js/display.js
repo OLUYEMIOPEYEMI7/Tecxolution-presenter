@@ -9,14 +9,20 @@ const socket = io();
 // problem. Detect that failure and show an unmissable full-screen button
 // that guarantees success, since it's a direct click inside this window.
 function showFullscreenPrompt() {
+  if (document.getElementById('fullscreen-prompt-btn')) return;
   const btn = document.createElement('button');
   btn.id = 'fullscreen-prompt-btn';
   btn.textContent = '🖥️  Click to go Fullscreen';
+  // A small banner, not a full-screen blackout — the actual stage (whatever
+  // is staged/live) stays visible underneath exactly as it looks in the
+  // Control Room's Preview/Live panels; this just floats a button to finish
+  // the one click fullscreen needs.
   btn.style.cssText = [
-    'position:fixed', 'inset:0', 'width:100%', 'height:100%', 'z-index:99999',
-    'background:#000', 'color:#fff', 'font-size:48px', 'font-family:sans-serif',
-    'border:none', 'cursor:pointer', 'display:flex', 'align-items:center',
-    'justify-content:center',
+    'position:fixed', 'left:50%', 'bottom:28px', 'transform:translateX(-50%)',
+    'z-index:99999', 'background:rgba(0,0,0,0.78)', 'color:#fff',
+    'font-size:20px', 'font-family:sans-serif', 'padding:14px 28px',
+    'border:2px solid #fff', 'border-radius:10px', 'cursor:pointer',
+    'box-shadow:0 4px 24px rgba(0,0,0,0.6)',
   ].join(';');
   btn.onclick = () => {
     document.documentElement.requestFullscreen()
