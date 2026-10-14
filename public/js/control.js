@@ -70,8 +70,11 @@ function renderSongList() {
     const delBtn = song.source === 'custom'
       ? `<span onclick="event.stopPropagation(); deleteSong('${song.id}')" style="float:right; color:#a3303c; font-size:12px; cursor:pointer;">✕</span>`
       : '';
+    const editBtn = song.source === 'custom'
+      ? `<span onclick="event.stopPropagation(); openEditSongModal('${song.id}')" style="float:right; color:#999; font-size:12px; cursor:pointer; margin-right:8px;" title="Edit title, artist, or lyrics">✎</span>`
+      : '';
     const schedBtn = `<span onclick="event.stopPropagation(); addWholeSongToSchedule('${song.id}')" class="song-sched-btn" title="Add this whole song to Today's Schedule">+ Sched</span>`;
-    div.innerHTML = `<div class="song-title">${song.title}${badge}${delBtn}</div><div class="song-artist">${song.artist || ''}${schedBtn}</div>`;
+    div.innerHTML = `<div class="song-title">${song.title}${badge}${editBtn}${delBtn}</div><div class="song-artist">${song.artist || ''}${schedBtn}</div>`;
     div.onclick = () => selectSong(song);
     container.appendChild(div);
   });
@@ -1202,7 +1205,11 @@ function escapeHtmlLocal(str) {
   return div.innerHTML;
 }
 
+let editingSongId = null;
+
 function openAddSongModal() {
+  editingSongId = null;
+  document.getElementById('add-song-modal-title').textContent = 'Add Your Own Song';
   document.getElementById('add-song-modal').classList.add('open');
   document.getElementById('new-song-title').value = '';
   document.getElementById('new-song-artist').value = '';
@@ -1211,8 +1218,39 @@ function openAddSongModal() {
   renderLyricsPreview();
 }
 
+// Reverses parseLyricsIntoSections() so an existing song's sections can be
+// loaded back into the plain-text textarea for editing.
+function sectionsToLyricsText(sections) {
+  return sections.map((s) => {
+    const isPlainVerseLabel = /^VERSE \d+$/.test(s.label);
+    const lines = s.pairs.map((p) => p[0]).join('\n');
+    return isPlainVerseLabel ? lines : s.label + '\n' + lines;
+  }).join('\n\n');
+}
+
+function openEditSongModal(id) {
+  fetch('/api/songs/' + id)
+    .then((r) => r.json())
+    .then((song) => {
+      if (song.error) {
+        alert('Could not load that song: ' + song.error);
+        return;
+      }
+      editingSongId = id;
+      document.getElementById('add-song-modal-title').textContent = 'Edit Song';
+      document.getElementById('add-song-modal').classList.add('open');
+      document.getElementById('new-song-title').value = song.title || '';
+      document.getElementById('new-song-artist').value = song.artist || '';
+      document.getElementById('new-song-lyrics').value = sectionsToLyricsText(song.sections || []);
+      document.getElementById('add-song-status').textContent = '';
+      renderLyricsPreview();
+    })
+    .catch((e) => alert('Could not load that song: ' + e.message));
+}
+
 function closeAddSongModal() {
   document.getElementById('add-song-modal').classList.remove('open');
+  editingSongId = null;
 }
 
 document.getElementById('new-song-lyrics').addEventListener('input', renderLyricsPreview);
@@ -1234,8 +1272,11 @@ function submitNewSong() {
   }
 
   statusEl.textContent = 'Saving…';
-  fetch('/api/songs', {
-    method: 'POST',
+  const isEditing = !!editingSongId;
+  const url = isEditing ? '/api/songs/' + editingSongId : '/api/songs';
+  const method = isEditing ? 'PUT' : 'POST';
+  fetch(url, {
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, artist, sections }),
   })

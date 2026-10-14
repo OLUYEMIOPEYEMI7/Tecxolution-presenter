@@ -418,6 +418,24 @@ async function deleteCustomSong(id) {
   return data.songs.length < before;
 }
 
+async function updateCustomSong(id, { title, artist, sections }) {
+  if (pool) {
+    const { rowCount } = await pool.query(
+      'UPDATE wp_custom_songs SET title = $2, artist = $3, sections = $4 WHERE id = $1',
+      [id, title, artist, JSON.stringify(sections)],
+    );
+    return rowCount > 0;
+  }
+  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+  const song = data.songs.find((s) => s.id === id);
+  if (!song) return false;
+  song.title = title;
+  song.artist = artist;
+  song.sections = sections;
+  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
+  return true;
+}
+
 // ---- Announcements (persistent) ----
 async function loadAnnouncementsList() {
   if (pool) {
@@ -639,6 +657,23 @@ app.delete('/api/songs/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not delete song: ' + e.message });
+  }
+});
+
+// Edit a custom song in place (title, artist, and/or lyrics) — e.g. filling
+// in real lyrics later for a song that was added as a title-only stub.
+app.put('/api/songs/:id', async (req, res) => {
+  const { title, artist, sections } = req.body;
+  if (!title || !Array.isArray(sections) || sections.length === 0) {
+    return res.status(400).json({ error: 'title and at least one section are required' });
+  }
+  try {
+    const updated = await updateCustomSong(req.params.id, { title, artist: artist || '', sections });
+    if (!updated) return res.status(404).json({ error: 'Song not found (hymns cannot be edited this way)' });
+    songCache = null; // invalidate
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not update song: ' + e.message });
   }
 });
 
