@@ -1,11 +1,47 @@
 const socket = io();
 
 // Auto-fullscreen when launched from the Control Room's "Open Projection
-// Screen" button (carries activation from that click in Chrome/Edge, so
-// this works without a second click from the operator).
-if (new URLSearchParams(location.search).get('launch') === '1') {
-  document.documentElement.requestFullscreen().catch(() => {});
+// Screen" button. This can silently fail (the click's user-activation can
+// expire while awaiting the screen-picker permission prompt in control.js,
+// which Chrome does not always carry over into the new popup), leaving an
+// ordinary bordered window sitting on the desktop with the taskbar/other
+// windows visible around it — exactly the "windows showing beneath"
+// problem. Detect that failure and show an unmissable full-screen button
+// that guarantees success, since it's a direct click inside this window.
+function showFullscreenPrompt() {
+  const btn = document.createElement('button');
+  btn.id = 'fullscreen-prompt-btn';
+  btn.textContent = '🖥️  Click to go Fullscreen';
+  btn.style.cssText = [
+    'position:fixed', 'inset:0', 'width:100%', 'height:100%', 'z-index:99999',
+    'background:#000', 'color:#fff', 'font-size:48px', 'font-family:sans-serif',
+    'border:none', 'cursor:pointer', 'display:flex', 'align-items:center',
+    'justify-content:center',
+  ].join(';');
+  btn.onclick = () => {
+    document.documentElement.requestFullscreen()
+      .then(() => btn.remove())
+      .catch((e) => { btn.textContent = 'Fullscreen failed: ' + e.message + ' — try F11 instead'; });
+  };
+  document.body.appendChild(btn);
 }
+
+if (new URLSearchParams(location.search).get('launch') === '1') {
+  document.documentElement.requestFullscreen().catch(() => showFullscreenPrompt());
+} else {
+  // Opened via the plain fallback path (no ?launch=1) — no activation was
+  // ever available for auto-fullscreen, so go straight to the one-click prompt.
+  showFullscreenPrompt();
+}
+
+// If fullscreen is ever exited unexpectedly (Esc, alt-tab on some systems,
+// a second monitor being unplugged) during a live service, surface the
+// same one-click button again instead of silently leaving a windowed view.
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && !document.getElementById('fullscreen-prompt-btn')) {
+    showFullscreenPrompt();
+  }
+});
 
 
 const stage = document.getElementById('stage');

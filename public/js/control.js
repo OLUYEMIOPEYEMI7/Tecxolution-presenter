@@ -677,6 +677,9 @@ async function openDisplay() {
   // full-screened automatically — no manual dragging needed. Race against
   // a timeout so a slow/ignored permission prompt can't leave the click
   // looking like it did nothing.
+  // "menubar=no,toolbar=no,location=no,status=no" strips the browser's own
+  // chrome from the popup immediately (no address bar / tabs / toolbar) —
+  // even before fullscreen succeeds, nothing but the stage is visible.
   if (window.isSecureContext && 'getScreenDetails' in window) {
     try {
       const timeout = new Promise((_, reject) =>
@@ -686,7 +689,8 @@ async function openDisplay() {
       const target = details.screens.find((s) => s !== details.currentScreen) || details.currentScreen;
       const features =
         `left=${target.availLeft},top=${target.availTop},` +
-        `width=${target.availWidth},height=${target.availHeight}`;
+        `width=${target.availWidth},height=${target.availHeight},` +
+        `menubar=no,toolbar=no,location=no,status=no,scrollbars=no`;
       window.open('/display?launch=1', '_blank', features);
       return;
     } catch (e) {
@@ -694,12 +698,13 @@ async function openDisplay() {
     }
   }
   // Fallback (Firefox/Safari, permission declined, or the prompt was
-  // ignored): open a normal window and tell the operator to do the
-  // one-time drag + fullscreen themselves.
-  window.open('/display', '_blank');
+  // ignored): open a chrome-less window and tell the operator to do the
+  // one-time drag + fullscreen themselves (display.js also shows a
+  // same-window "tap to fullscreen" button so one click is all it takes).
+  window.open('/display', '_blank', 'menubar=no,toolbar=no,location=no,status=no,scrollbars=no');
   alert(
-    'Drag this new window onto the projector screen, then press F11 ' +
-    '(Windows) or the green fullscreen button (Mac) to fill the screen. ' +
+    'Drag this new window onto the projector screen, then click the ' +
+    '"Enter Fullscreen" button that appears on it (or press F11). ' +
     'You only need to do this once per service.'
   );
 }
