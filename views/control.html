@@ -113,6 +113,20 @@
         <p id="scripture-status" style="font-size:12px; color:#999; margin-top:6px;"></p>
       </div>
 
+      <h2 style="margin-top:24px;">✍️ Free Text</h2>
+      <div class="scripture-box">
+        <p style="font-size:11px; color:#888; margin:0 0 8px;">
+          Type anything and project it — a welcome message, a quick notice, "Please silence your phones" — no need to build a whole song or presentation first. Uses whatever theme is currently selected.
+        </p>
+        <textarea id="free-text-input" rows="4" placeholder="Type whatever you want to display…" style="width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button onclick="stageFreeText()" ondblclick="stageFreeText(true)" title="Click to stage · double-click to go live instantly">Stage in Preview</button>
+          <button class="secondary" onclick="addFreeTextToSchedule()">+ Schedule</button>
+          <button class="secondary" onclick="saveFreeText()">+ Save</button>
+        </div>
+        <div id="free-texts-list" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;"></div>
+      </div>
+
       <h2 style="margin-top:24px;">📢 Announcements / Ticker</h2>
       <div class="scripture-box">
         <p style="font-size:11px; color:#888; margin:0 0 8px;">

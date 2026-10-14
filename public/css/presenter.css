@@ -135,6 +135,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-ui); }
 .stage.theme-pure .scripture-ref { color: #8a5f00; }
 .stage.theme-pure .scripture-text { color: #241a00; text-shadow: none; }
 .stage.theme-pure .scripture-translation { color: #6b5d3f; }
+.stage.theme-pure .free-text-body { color: #241a00; text-shadow: none; }
 .stage.theme-pure .stage-label { color: #6b5d3f; }
 .stage.theme-pure .stage-label::before { background: linear-gradient(90deg, transparent, #8a5f00, transparent); }
 .stage.theme-pure .standby-title { color: #8a5f00; }
@@ -305,6 +306,15 @@ html, body { margin: 0; padding: 0; font-family: var(--font-ui); }
   margin-top: 0.7em;
   letter-spacing: 2.5px;
   text-transform: uppercase;
+}
+
+.free-text-body {
+  font-size: clamp(32px, 5vw, 68px);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.4;
+  text-shadow: 0 4px 18px rgba(0,0,0,0.9);
+  white-space: pre-wrap;
 }
 
 .stage.blank .stage-content,

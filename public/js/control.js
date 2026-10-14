@@ -405,6 +405,72 @@ function quickRef(ref, thenGoLive) {
   stageScripture(thenGoLive);
 }
 
+// ================= Free Text (type-and-go-live, no presentation needed) =================
+function stageFreeText(thenGoLive) {
+  const text = document.getElementById('free-text-input').value.trim();
+  if (!text) return;
+  currentSongSections = [];
+  stageState({ type: 'free-text', text, background: null });
+  if (thenGoLive) goLive();
+}
+
+function addFreeTextToSchedule() {
+  const text = document.getElementById('free-text-input').value.trim();
+  if (!text) return;
+  pushScheduleItem({
+    displayTitle: '✍ ' + (text.length > 40 ? text.slice(0, 40) + '…' : text),
+    stateType: 'free-text',
+    text,
+  });
+}
+
+function saveFreeText() {
+  const text = document.getElementById('free-text-input').value.trim();
+  if (!text) {
+    alert('Type something first, then Save.');
+    return;
+  }
+  fetch('/api/free-texts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+    .then((r) => r.json())
+    .then(() => loadFreeTextsList());
+}
+
+function loadFreeTextsList() {
+  fetch('/api/free-texts')
+    .then((r) => r.json())
+    .then((data) => renderFreeTextsList(data.items || []));
+}
+loadFreeTextsList();
+
+function renderFreeTextsList(list) {
+  const container = document.getElementById('free-texts-list');
+  if (list.length === 0) {
+    container.innerHTML = '<p style="color:#666; font-size:11px; margin:0;">No saved texts yet — type one above and click "+ Save" to reuse it every service.</p>';
+    return;
+  }
+  container.innerHTML = list.map((item) => `
+    <span class="announcement-chip" onclick="loadFreeTextIntoBox('${item.id}')" title="Click to load into the box above">
+      ${escapeHtmlLocal(item.text.slice(0, 28))}${item.text.length > 28 ? '…' : ''}
+      <span onclick="event.stopPropagation(); deleteFreeText('${item.id}')" style="margin-left:6px; color:#a3303c;">✕</span>
+    </span>
+  `).join('');
+  window._freeTextsCache = list;
+}
+
+function loadFreeTextIntoBox(id) {
+  const item = (window._freeTextsCache || []).find((a) => a.id === id);
+  if (!item) return;
+  document.getElementById('free-text-input').value = item.text;
+}
+
+function deleteFreeText(id) {
+  fetch('/api/free-texts/' + id, { method: 'DELETE' }).then(() => loadFreeTextsList());
+}
+
 function clearStage() {
   socket.emit('clear');
   document.querySelectorAll('.slide-item, .song-item').forEach((el) => el.classList.remove('active'));
@@ -586,6 +652,12 @@ function loadScheduleItem(item, thenGoLive) {
     currentSongSections = [];
     currentDeckSlides = [];
     stageState({ type: 'image', url: item.url });
+    if (thenGoLive) goLive();
+  } else if (item.stateType === 'free-text') {
+    currentSongSections = [];
+    currentDeckSlides = [];
+    document.getElementById('free-text-input').value = item.text || '';
+    stageState({ type: 'free-text', text: item.text, background: null });
     if (thenGoLive) goLive();
   } else if (item.stateType === 'media-video') {
     currentSongSections = [];

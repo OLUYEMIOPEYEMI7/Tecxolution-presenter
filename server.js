@@ -42,6 +42,11 @@ async function initDb() {
       text TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS wp_free_texts (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS wp_theme_images (
       id TEXT PRIMARY KEY,
       filename TEXT,
@@ -358,6 +363,7 @@ async function reorderScheduleRows(orderedIds) {
 const songsPath = path.join(__dirname, 'data', 'songs.json');
 const hymnsPath = path.join(__dirname, 'data', 'hymns.json');
 const announcementsPath = path.join(__dirname, 'data', 'announcements.json');
+const freeTextsPath = path.join(__dirname, 'data', 'free-texts.json');
 const rccgHymnalPath = path.join(__dirname, 'data', 'rccg-hymnal.json');
 
 function loadHymns() {
@@ -448,6 +454,45 @@ async function deleteAnnouncementItem(id) {
   data.announcements = data.announcements.filter((a) => a.id !== id);
   fs.writeFileSync(announcementsPath, JSON.stringify(data, null, 2));
   return data.announcements.length < before;
+}
+
+// ---- Free Text (persistent: reusable typed slides — a one-step alternative
+// to building a whole "presentation" just to show a quick line of text) ----
+async function loadFreeTextsList() {
+  if (pool) {
+    try {
+      const { rows } = await pool.query('SELECT id, text FROM wp_free_texts ORDER BY created_at');
+      return rows;
+    } catch (e) {
+      console.error('DB read failed for free texts, falling back to local file:', e.message);
+    }
+  }
+  if (!fs.existsSync(freeTextsPath)) return [];
+  return JSON.parse(fs.readFileSync(freeTextsPath, 'utf8')).items;
+}
+
+async function addFreeTextItem(text) {
+  const newItem = { id: 'ftx-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text };
+  if (pool) {
+    await pool.query('INSERT INTO wp_free_texts (id, text) VALUES ($1, $2)', [newItem.id, newItem.text]);
+    return newItem;
+  }
+  const data = fs.existsSync(freeTextsPath) ? JSON.parse(fs.readFileSync(freeTextsPath, 'utf8')) : { items: [] };
+  data.items.push(newItem);
+  fs.writeFileSync(freeTextsPath, JSON.stringify(data, null, 2));
+  return newItem;
+}
+
+async function deleteFreeTextItem(id) {
+  if (pool) {
+    const { rowCount } = await pool.query('DELETE FROM wp_free_texts WHERE id = $1', [id]);
+    return rowCount > 0;
+  }
+  const data = fs.existsSync(freeTextsPath) ? JSON.parse(fs.readFileSync(freeTextsPath, 'utf8')) : { items: [] };
+  const before = data.items.length;
+  data.items = data.items.filter((a) => a.id !== id);
+  fs.writeFileSync(freeTextsPath, JSON.stringify(data, null, 2));
+  return data.items.length < before;
 }
 
 // ---- Theme images (persistent: stored as bytes in Postgres; falls back to disk) ----
@@ -831,6 +876,33 @@ app.post('/api/announcements', async (req, res) => {
 app.delete('/api/announcements/:id', async (req, res) => {
   try {
     const deleted = await deleteAnnouncementItem(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not delete: ' + e.message });
+  }
+});
+
+// Saved free-text library (reusable typed slides — "Please silence your
+// phones", "Welcome to Province 9", etc. — type once, reuse every service).
+app.get('/api/free-texts', async (req, res) => {
+  res.json({ items: await loadFreeTextsList() });
+});
+
+app.post('/api/free-texts', async (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
+  try {
+    const newItem = await addFreeTextItem(text.trim());
+    res.json(newItem);
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save: ' + e.message });
+  }
+});
+
+app.delete('/api/free-texts/:id', async (req, res) => {
+  try {
+    const deleted = await deleteFreeTextItem(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (e) {

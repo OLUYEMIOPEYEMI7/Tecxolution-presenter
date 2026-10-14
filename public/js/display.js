@@ -70,6 +70,13 @@ function render(state) {
       <div class="scripture-translation">${escapeHtml(state.translation || '')}</div>
     `;
     stageLabel.textContent = '';
+  } else if (state.type === 'free-text') {
+    // Plain typed text/announcement slide — no reference or translation line,
+    // just the words themselves, large and centered, same auto-fit-to-screen
+    // behavior as every other slide type.
+    const lines = (state.text || '').split('\n').map((l) => escapeHtml(l)).join('<br>');
+    stageContent.innerHTML = `<div class="free-text-body">${lines}</div>`;
+    stageLabel.textContent = state.label || '';
   } else if (state.type === 'image') {
     stageImage.src = state.url || '';
     stageImage.style.display = 'block';
