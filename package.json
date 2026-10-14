@@ -1,0 +1,53 @@
+{
+  "name": "worship-presenter-offline",
+  "version": "1.0.0",
+  "description": "Worship Presenter — Offline Edition (RCCG Youth Province 9 / Peculiar Voices). Fully local, no internet or database required.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win dir"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1",
+    "multer": "^2.4.0",
+    "p-limit": "^7.3.3",
+    "pg": "^8.23.1",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.tecxolutions.worshippresenter.offline",
+    "productName": "Worship Presenter Offline",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "public/**/*",
+      "views/**/*",
+      "data/**/*",
+      "node_modules/**/*",
+      "!node_modules/electron-builder/**",
+      "!node_modules/electron/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    }
+  }
+}

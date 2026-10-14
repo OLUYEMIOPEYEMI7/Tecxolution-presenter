@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Projection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,600;1,500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/presenter.css" />
+</head>
+<body class="display-body">
+  <div id="stage" class="stage blank">
+    <div class="stage-bg" id="stage-bg"></div>
+    <div class="stage-overlay"></div>
+    <img id="stage-image" class="stage-media-img" alt="" />
+    <video id="stage-video" class="stage-media-video" playsinline></video>
+    <iframe id="stage-video-embed" class="stage-media-video" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>
+    <div class="stage-content" id="stage-content"></div>
+    <div class="stage-label" id="stage-label"></div>
+    <div class="standby-screen" id="standby-screen">
+      <div class="standby-brand-row">
+        <img src="/images/brand/rccg-logo.png" alt="RCCG" class="standby-logo" />
+        <img src="/images/brand/yp9-logo.png" alt="YP9" class="standby-logo" />
+      </div>
+      <div class="standby-title">PECULIAR VOICES</div>
+      <div class="standby-subtitle">RCCG Youth Province 9</div>
+    </div>
+    <div class="corner-watermark" id="corner-watermark">
+      <img src="/images/brand/rccg-logo.png" alt="" />
+      <img src="/images/brand/yp9-logo.png" alt="" />
+    </div>
+    <div class="ticker-bar" id="ticker-bar">
+      <div class="ticker-text" id="ticker-text"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/display.js"></script>
+</body>
+</html>

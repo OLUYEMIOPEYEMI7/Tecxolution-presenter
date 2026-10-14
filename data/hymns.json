@@ -1,0 +1,201 @@
+{
+  "hymns": [
+    {
+      "id": "hymn-amazing-grace",
+      "title": "Amazing Grace",
+      "artist": "John Newton (1779)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/05_dove_presence.jpg", "pairs": [["Amazing grace! How sweet the sound,", ""], ["That saved a wretch like me!", ""], ["I once was lost, but now am found,", ""], ["Was blind, but now I see.", ""]] },
+        { "label": "VERSE 2", "background": "/images/05_dove_presence.jpg", "pairs": [["'Twas grace that taught my heart to fear,", ""], ["And grace my fears relieved;", ""], ["How precious did that grace appear", ""], ["The hour I first believed!", ""]] },
+        { "label": "VERSE 3", "background": "/images/05_dove_presence.jpg", "pairs": [["Through many dangers, toils, and snares,", ""], ["I have already come;", ""], ["'Tis grace hath brought me safe thus far,", ""], ["And grace will lead me home.", ""]] },
+        { "label": "VERSE 4", "background": "/images/05_dove_presence.jpg", "pairs": [["The Lord has promised good to me,", ""], ["His word my hope secures;", ""], ["He will my shield and portion be,", ""], ["As long as life endures.", ""]] },
+        { "label": "VERSE 5", "background": "/images/05_dove_presence.jpg", "pairs": [["When we've been there ten thousand years,", ""], ["Bright shining as the sun,", ""], ["We've no less days to sing God's praise", ""], ["Than when we'd first begun.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-blessed-assurance",
+      "title": "Blessed Assurance",
+      "artist": "Fanny J. Crosby (1873)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/06_every_nation.jpg", "pairs": [["Blessed assurance, Jesus is mine!", ""], ["Oh, what a foretaste of glory divine!", ""], ["Heir of salvation, purchase of God,", ""], ["Born of His Spirit, washed in His blood.", ""]] },
+        { "label": "REFRAIN", "background": "/images/06_every_nation.jpg", "pairs": [["This is my story, this is my song,", ""], ["Praising my Savior all the day long.", ""]] },
+        { "label": "VERSE 2", "background": "/images/06_every_nation.jpg", "pairs": [["Perfect submission, perfect delight,", ""], ["Visions of rapture now burst on my sight;", ""], ["Angels descending bring from above", ""], ["Echoes of mercy, whispers of love.", ""]] },
+        { "label": "VERSE 3", "background": "/images/06_every_nation.jpg", "pairs": [["Perfect submission, all is at rest,", ""], ["I in my Savior am happy and blest;", ""], ["Watching and waiting, looking above,", ""], ["Filled with His goodness, lost in His love.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-it-is-well",
+      "title": "It Is Well with My Soul",
+      "artist": "Horatio G. Spafford (1873)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/01_broken_world.jpg", "pairs": [["When peace, like a river, attendeth my way,", ""], ["When sorrows like sea billows roll;", ""], ["Whatever my lot, Thou hast taught me to say,", ""], ["\"It is well, it is well, with my soul.\"", ""]] },
+        { "label": "REFRAIN", "background": "/images/01_broken_world.jpg", "pairs": [["It is well, with my soul,", ""], ["It is well, it is well, with my soul.", ""]] },
+        { "label": "VERSE 2", "background": "/images/01_broken_world.jpg", "pairs": [["Though Satan should buffet, though trials should come,", ""], ["Let this blest assurance control,", ""], ["That Christ has regarded my helpless estate,", ""], ["And hath shed His own blood for my soul.", ""]] },
+        { "label": "VERSE 3", "background": "/images/01_broken_world.jpg", "pairs": [["My sin—oh, the bliss of this glorious thought—", ""], ["My sin, not in part but the whole,", ""], ["Is nailed to the cross, and I bear it no more,", ""], ["Praise the Lord, praise the Lord, O my soul!", ""]] },
+        { "label": "VERSE 4", "background": "/images/01_broken_world.jpg", "pairs": [["And Lord, haste the day when my faith shall be sight,", ""], ["The clouds be rolled back as a scroll;", ""], ["The trump shall resound, and the Lord shall descend,", ""], ["\"Even so\"—it is well with my soul.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-holy-holy-holy",
+      "title": "Holy, Holy, Holy",
+      "artist": "Reginald Heber (1826)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/04_christ_glory.jpg", "pairs": [["Holy, holy, holy! Lord God Almighty!", ""], ["Early in the morning our song shall rise to Thee;", ""], ["Holy, holy, holy, merciful and mighty!", ""], ["God in three Persons, blessed Trinity!", ""]] },
+        { "label": "VERSE 2", "background": "/images/04_christ_glory.jpg", "pairs": [["Holy, holy, holy! All the saints adore Thee,", ""], ["Casting down their golden crowns around the glassy sea;", ""], ["Cherubim and seraphim falling down before Thee,", ""], ["Who wert and art and evermore shalt be.", ""]] },
+        { "label": "VERSE 3", "background": "/images/04_christ_glory.jpg", "pairs": [["Holy, holy, holy! Though the darkness hide Thee,", ""], ["Though the eye of sinful man Thy glory may not see;", ""], ["Only Thou art holy; there is none beside Thee,", ""], ["Perfect in power, in love, and purity.", ""]] },
+        { "label": "VERSE 4", "background": "/images/04_christ_glory.jpg", "pairs": [["Holy, holy, holy! Lord God Almighty!", ""], ["All Thy works shall praise Thy name, in earth, and sky, and sea;", ""], ["Holy, holy, holy; merciful and mighty!", ""], ["God in three Persons, blessed Trinity!", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-what-a-friend",
+      "title": "What a Friend We Have in Jesus",
+      "artist": "Joseph M. Scriven (1855)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/05_dove_presence.jpg", "pairs": [["What a friend we have in Jesus, all our sins and griefs to bear!", ""], ["What a privilege to carry everything to God in prayer!", ""], ["O what peace we often forfeit, O what needless pain we bear,", ""], ["All because we do not carry everything to God in prayer.", ""]] },
+        { "label": "VERSE 2", "background": "/images/05_dove_presence.jpg", "pairs": [["Have we trials and temptations? Is there trouble anywhere?", ""], ["We should never be discouraged; take it to the Lord in prayer.", ""], ["Can we find a friend so faithful who will all our sorrows share?", ""], ["Jesus knows our every weakness; take it to the Lord in prayer.", ""]] },
+        { "label": "VERSE 3", "background": "/images/05_dove_presence.jpg", "pairs": [["Are we weak and heavy laden, cumbered with a load of care?", ""], ["Precious Savior, still our refuge—take it to the Lord in prayer.", ""], ["Do your friends despise, forsake you? Take it to the Lord in prayer!", ""], ["In His arms He'll take and shield you; you will find a solace there.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-rock-of-ages",
+      "title": "Rock of Ages",
+      "artist": "Augustus M. Toplady (1776)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["Rock of Ages, cleft for me,", ""], ["Let me hide myself in Thee;", ""], ["Let the water and the blood,", ""], ["From Thy wounded side which flowed,", ""], ["Be of sin the double cure,", ""], ["Save from wrath and make me pure.", ""]] },
+        { "label": "VERSE 2", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["Could my tears forever flow,", ""], ["Could my zeal no respite know,", ""], ["All for sin could not atone;", ""], ["Thou must save, and Thou alone.", ""], ["Nothing in my hand I bring,", ""], ["Simply to Thy cross I cling.", ""]] },
+        { "label": "VERSE 3", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["While I draw this fleeting breath,", ""], ["When mine eyes shall close in death,", ""], ["When I soar to worlds unknown,", ""], ["See Thee on Thy judgment throne,", ""], ["Rock of Ages, cleft for me,", ""], ["Let me hide myself in Thee.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-mighty-fortress",
+      "title": "A Mighty Fortress Is Our God",
+      "artist": "Martin Luther (1529)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["A mighty fortress is our God,", ""], ["A bulwark never failing;", ""], ["Our helper He, amid the flood", ""], ["Of mortal ills prevailing.", ""]] },
+        { "label": "VERSE 2", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["Did we in our own strength confide,", ""], ["Our striving would be losing;", ""], ["Were not the right Man on our side,", ""], ["The Man of God's own choosing.", ""]] },
+        { "label": "VERSE 3", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["And though this world, with devils filled,", ""], ["Should threaten to undo us,", ""], ["We will not fear, for God has willed", ""], ["His truth to triumph through us.", ""]] },
+        { "label": "VERSE 4", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["That Word above all earthly powers,", ""], ["No thanks to them, abideth;", ""], ["The Spirit and the gifts are ours", ""], ["Through Him who with us sideth.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-just-as-i-am",
+      "title": "Just As I Am",
+      "artist": "Charlotte Elliott (1835)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/02_new_creation.jpg", "pairs": [["Just as I am, without one plea,", ""], ["But that Thy blood was shed for me,", ""], ["And that Thou bidst me come to Thee,", ""], ["O Lamb of God, I come, I come.", ""]] },
+        { "label": "VERSE 2", "background": "/images/02_new_creation.jpg", "pairs": [["Just as I am, and waiting not", ""], ["To rid my soul of one dark blot,", ""], ["To Thee whose blood can cleanse each spot,", ""], ["O Lamb of God, I come, I come.", ""]] },
+        { "label": "VERSE 3", "background": "/images/02_new_creation.jpg", "pairs": [["Just as I am, though tossed about", ""], ["With many a conflict, many a doubt,", ""], ["Fightings and fears within, without,", ""], ["O Lamb of God, I come, I come.", ""]] },
+        { "label": "VERSE 4", "background": "/images/02_new_creation.jpg", "pairs": [["Just as I am, Thou wilt receive,", ""], ["Wilt welcome, pardon, cleanse, relieve;", ""], ["Because Thy promise I believe,", ""], ["O Lamb of God, I come, I come.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-when-i-survey",
+      "title": "When I Survey the Wondrous Cross",
+      "artist": "Isaac Watts (1707)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/01_broken_world.jpg", "pairs": [["When I survey the wondrous cross,", ""], ["On which the Prince of glory died,", ""], ["My richest gain I count but loss,", ""], ["And pour contempt on all my pride.", ""]] },
+        { "label": "VERSE 2", "background": "/images/01_broken_world.jpg", "pairs": [["Forbid it, Lord, that I should boast,", ""], ["Save in the death of Christ, my God;", ""], ["All the vain things that charm me most,", ""], ["I sacrifice them to His blood.", ""]] },
+        { "label": "VERSE 3", "background": "/images/01_broken_world.jpg", "pairs": [["See from His head, His hands, His feet,", ""], ["Sorrow and love flow mingled down;", ""], ["Did e'er such love and sorrow meet,", ""], ["Or thorns compose so rich a crown?", ""]] },
+        { "label": "VERSE 4", "background": "/images/01_broken_world.jpg", "pairs": [["Were the whole realm of nature mine,", ""], ["That were a present far too small;", ""], ["Love so amazing, so divine,", ""], ["Demands my soul, my life, my all.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-thousand-tongues",
+      "title": "O For a Thousand Tongues to Sing",
+      "artist": "Charles Wesley (1739)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/04_christ_glory.jpg", "pairs": [["O for a thousand tongues to sing", ""], ["My dear Redeemer's praise,", ""], ["The glories of my God and King,", ""], ["The triumphs of His grace!", ""]] },
+        { "label": "VERSE 2", "background": "/images/04_christ_glory.jpg", "pairs": [["Jesus, the name that charms our fears,", ""], ["That bids our sorrows cease;", ""], ["'Tis music in the sinner's ears,", ""], ["'Tis life, and health, and peace.", ""]] },
+        { "label": "VERSE 3", "background": "/images/04_christ_glory.jpg", "pairs": [["He breaks the power of reigning sin,", ""], ["He sets the prisoner free;", ""], ["His blood can make the foulest clean,", ""], ["His blood availed for me.", ""]] },
+        { "label": "VERSE 4", "background": "/images/04_christ_glory.jpg", "pairs": [["My gracious Master and my God,", ""], ["Assist me to proclaim,", ""], ["To spread through all the earth abroad", ""], ["The honors of Thy name.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-come-thou-fount",
+      "title": "Come, Thou Fount of Every Blessing",
+      "artist": "Robert Robinson (1758)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/02_new_creation.jpg", "pairs": [["Come, Thou Fount of every blessing,", ""], ["Tune my heart to sing Thy grace;", ""], ["Streams of mercy, never ceasing,", ""], ["Call for songs of loudest praise.", ""]] },
+        { "label": "VERSE 2", "background": "/images/02_new_creation.jpg", "pairs": [["Here I raise my Ebenezer;", ""], ["Hither by Thy help I'm come;", ""], ["Jesus sought me when a stranger,", ""], ["Wandering from the fold of God.", ""]] },
+        { "label": "VERSE 3", "background": "/images/02_new_creation.jpg", "pairs": [["O to grace how great a debtor", ""], ["Daily I'm constrained to be!", ""], ["Prone to wander, Lord, I feel it,", ""], ["Here's my heart, O take and seal it.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-abide-with-me",
+      "title": "Abide with Me",
+      "artist": "Henry F. Lyte (1847)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/05_dove_presence.jpg", "pairs": [["Abide with me: fast falls the eventide;", ""], ["The darkness deepens; Lord, with me abide.", ""], ["When other helpers fail and comforts flee,", ""], ["Help of the helpless, O abide with me.", ""]] },
+        { "label": "VERSE 2", "background": "/images/05_dove_presence.jpg", "pairs": [["Swift to its close ebbs out life's little day;", ""], ["Earth's joys grow dim, its glories pass away;", ""], ["Change and decay in all around I see;", ""], ["O Thou who changest not, abide with me.", ""]] },
+        { "label": "VERSE 3", "background": "/images/05_dove_presence.jpg", "pairs": [["I fear no foe, with Thee at hand to bless;", ""], ["Ills have no weight, and tears no bitterness.", ""], ["Where is death's sting? Where, grave, thy victory?", ""], ["I triumph still, if Thou abide with me.", ""]] },
+        { "label": "VERSE 4", "background": "/images/05_dove_presence.jpg", "pairs": [["Hold Thou Thy cross before my closing eyes;", ""], ["Shine through the gloom and point me to the skies.", ""], ["Heaven's morning breaks, and earth's vain shadows flee;", ""], ["In life, in death, O Lord, abide with me.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-crown-him",
+      "title": "Crown Him with Many Crowns",
+      "artist": "Matthew Bridges (1851)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/07_final_throne.jpg", "pairs": [["Crown Him with many crowns,", ""], ["The Lamb upon His throne;", ""], ["Hark! How the heavenly anthem drowns", ""], ["All music but its own!", ""]] },
+        { "label": "VERSE 2", "background": "/images/07_final_throne.jpg", "pairs": [["Crown Him the Lord of life,", ""], ["Who triumphed o'er the grave,", ""], ["And rose victorious in the strife", ""], ["For those He came to save.", ""]] },
+        { "label": "VERSE 3", "background": "/images/07_final_throne.jpg", "pairs": [["Crown Him the Lord of love;", ""], ["Behold His hands and side,", ""], ["Rich wounds, yet visible above,", ""], ["In beauty glorified.", ""]] },
+        { "label": "VERSE 4", "background": "/images/07_final_throne.jpg", "pairs": [["Crown Him the Lord of years,", ""], ["The Potentate of time,", ""], ["Creator of the rolling spheres,", ""], ["Ineffably sublime.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-to-god-be-the-glory",
+      "title": "To God Be the Glory",
+      "artist": "Fanny J. Crosby (1875)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/07_final_throne.jpg", "pairs": [["To God be the glory, great things He hath done,", ""], ["So loved He the world that He gave us His Son,", ""], ["Who yielded His life an atonement for sin,", ""], ["And opened the life gate that all may go in.", ""]] },
+        { "label": "REFRAIN", "background": "/images/07_final_throne.jpg", "pairs": [["Praise the Lord, praise the Lord, let the earth hear His voice!", ""], ["Praise the Lord, praise the Lord, let the people rejoice!", ""], ["O come to the Father, through Jesus the Son,", ""], ["And give Him the glory, great things He hath done.", ""]] },
+        { "label": "VERSE 2", "background": "/images/07_final_throne.jpg", "pairs": [["O perfect redemption, the purchase of blood,", ""], ["To every believer the promise of God;", ""], ["The vilest offender who truly believes,", ""], ["That moment from Jesus a pardon receives.", ""]] },
+        { "label": "VERSE 3", "background": "/images/07_final_throne.jpg", "pairs": [["Great things He hath taught us, great things He hath done,", ""], ["And great our rejoicing through Jesus the Son;", ""], ["But purer, and higher, and greater will be", ""], ["Our wonder, our transport, when Jesus we see.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-leaning-on-everlasting-arms",
+      "title": "Leaning on the Everlasting Arms",
+      "artist": "Elisha A. Hoffman (1887)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/02_new_creation.jpg", "pairs": [["What a fellowship, what a joy divine,", ""], ["Leaning on the everlasting arms;", ""], ["What a blessedness, what a peace is mine,", ""], ["Leaning on the everlasting arms.", ""]] },
+        { "label": "REFRAIN", "background": "/images/02_new_creation.jpg", "pairs": [["Leaning, leaning, safe and secure from all alarms;", ""], ["Leaning, leaning, leaning on the everlasting arms.", ""]] },
+        { "label": "VERSE 2", "background": "/images/02_new_creation.jpg", "pairs": [["Oh, how sweet to walk in this pilgrim way,", ""], ["Leaning on the everlasting arms;", ""], ["Oh, how bright the path grows from day to day,", ""], ["Leaning on the everlasting arms.", ""]] },
+        { "label": "VERSE 3", "background": "/images/02_new_creation.jpg", "pairs": [["What have I to dread, what have I to fear,", ""], ["Leaning on the everlasting arms?", ""], ["I have blessed peace with my Lord so near,", ""], ["Leaning on the everlasting arms.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-standing-on-promises",
+      "title": "Standing on the Promises",
+      "artist": "R. Kelso Carter (1886)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["Standing on the promises of Christ, my King!", ""], ["Through eternal ages let His praises ring!", ""], ["\"Glory in the highest!\" I will shout and sing,", ""], ["Standing on the promises of God.", ""]] },
+        { "label": "REFRAIN", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["Standing, standing, standing on the promises of God, my Savior;", ""], ["Standing, standing, I'm standing on the promises of God.", ""]] },
+        { "label": "VERSE 2", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["Standing on the promises that cannot fail!", ""], ["When the howling storms of doubt and fear assail,", ""], ["By the living Word of God I shall prevail,", ""], ["Standing on the promises of God.", ""]] },
+        { "label": "VERSE 3", "background": "/images/03_lion_lamb_scroll.jpg", "pairs": [["Standing on the promises of Christ, the Lord,", ""], ["Bound to Him eternally by love's strong cord,", ""], ["Overcoming daily with the Spirit's sword,", ""], ["Standing on the promises of God.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-trust-and-obey",
+      "title": "Trust and Obey",
+      "artist": "John H. Sammis (1887)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/06_every_nation.jpg", "pairs": [["When we walk with the Lord", ""], ["In the light of His Word,", ""], ["What a glory He sheds on our way!", ""], ["While we do His good will,", ""], ["He abides with us still,", ""], ["And with all who will trust and obey.", ""]] },
+        { "label": "REFRAIN", "background": "/images/06_every_nation.jpg", "pairs": [["Trust and obey, for there's no other way", ""], ["To be happy in Jesus, but to trust and obey.", ""]] },
+        { "label": "VERSE 2", "background": "/images/06_every_nation.jpg", "pairs": [["Not a burden we bear,", ""], ["Not a sorrow we share,", ""], ["But our toil He doth richly repay;", ""], ["Not a grief or a loss,", ""], ["Not a frown or a cross,", ""], ["But is blest if we trust and obey.", ""]] },
+        { "label": "VERSE 3", "background": "/images/06_every_nation.jpg", "pairs": [["Then in fellowship sweet", ""], ["We will sit at His feet,", ""], ["Or we'll walk by His side in the way;", ""], ["What He says we will do,", ""], ["Where He sends we will go,", ""], ["Never fear, only trust and obey.", ""]] }
+      ]
+    },
+    {
+      "id": "hymn-old-rugged-cross",
+      "title": "The Old Rugged Cross",
+      "artist": "George Bennard (1913)",
+      "sections": [
+        { "label": "VERSE 1", "background": "/images/01_broken_world.jpg", "pairs": [["On a hill far away stood an old rugged cross,", ""], ["The emblem of suffering and shame;", ""], ["And I love that old cross where the dearest and best", ""], ["For a world of lost sinners was slain.", ""]] },
+        { "label": "REFRAIN", "background": "/images/01_broken_world.jpg", "pairs": [["So I'll cherish the old rugged cross,", ""], ["Till my trophies at last I lay down;", ""], ["I will cling to the old rugged cross,", ""], ["And exchange it some day for a crown.", ""]] },
+        { "label": "VERSE 2", "background": "/images/01_broken_world.jpg", "pairs": [["O that old rugged cross, so despised by the world,", ""], ["Has a wondrous attraction for me;", ""], ["For the dear Lamb of God left His glory above", ""], ["To bear it to dark Calvary.", ""]] },
+        { "label": "VERSE 3", "background": "/images/01_broken_world.jpg", "pairs": [["To that old rugged cross I will ever be true,", ""], ["Its shame and reproach gladly bear;", ""], ["Then He'll call me some day to my home far away,", ""], ["Where His glory forever I'll share.", ""]] }
+      ]
+    }
+  ]
+}

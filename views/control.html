@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Worship Presenter — Control Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,600;1,500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/presenter.css" />
+</head>
+<body class="control-body">
+  <div class="brand-strip"></div>
+  <div class="control-header">
+    <div class="header-brand">
+      <img src="/images/brand/rccg-logo.png" alt="RCCG" class="header-logo" />
+      <img src="/images/brand/yp9-logo.png" alt="YP9" class="header-logo" />
+      <div class="header-titles">
+        <h1>Worship Presenter</h1>
+        <span class="header-subtitle">RCCG Youth Province 9 &middot; Peculiar Voices</span>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center;">
+      <div class="live-indicator"><span class="live-dot" id="live-dot"></span><span id="live-text">connecting…</span></div>
+      <div class="actions">
+        <button class="secondary" onclick="openDisplay()">Open Projection Screen ⧉</button>
+        <button class="danger" onclick="clearStage()">Clear / Blackout</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="control-main">
+    <div class="panel panel-songs">
+      <h2>Songs &amp; Hymns</h2>
+      <div class="song-tabs" id="song-tabs">
+        <button class="song-tab active" data-filter="all">All</button>
+        <button class="song-tab" data-filter="custom">My Songs</button>
+        <button class="song-tab" data-filter="hymn">Classic Hymns</button>
+        <button class="song-tab" data-filter="rccg">RCCG Hymnal</button>
+      </div>
+      <input type="text" id="song-search" placeholder="Search by title or hymn number…" class="search-input" />
+      <button class="add-song-btn" onclick="openAddSongModal()">
+        <span class="add-song-icon">+</span> Add Your Own Song
+      </button>
+      <div id="song-list"></div>
+      <div id="song-list-footer" class="song-list-footer"></div>
+    </div>
+
+    <div class="panel panel-slides">
+      <h2>Slides <span style="font-size:10px; color:#666; font-weight:400; letter-spacing:0;">(click to stage in Preview)</span></h2>
+      <div id="slide-list"><p style="color:#666; font-size:13px;">Select a song to see its slides.</p></div>
+
+      <h2 style="margin-top:24px;">Today's Schedule</h2>
+      <div class="scripture-box">
+        <div id="schedule-list" style="margin-bottom:8px;"><p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Schedule" on any slide/scripture to build your service order.</p></div>
+        <button class="secondary" onclick="clearSchedule()" style="font-size:11px;">Clear Schedule</button>
+      </div>
+
+      <h2 style="margin-top:24px;">🖼 Media (Images · Video · PowerPoint)</h2>
+      <div class="scripture-box">
+        <p style="font-size:11px; color:#888; margin:0 0 8px;">
+          Add images, video clips/links, or a PowerPoint deck — each slide of a
+          PowerPoint is converted automatically so it can be clicked through
+          and projected just like a song's slides.
+        </p>
+
+        <div class="media-tabs" id="media-tabs">
+          <button class="song-tab active" data-media-tab="image">Image</button>
+          <button class="song-tab" data-media-tab="video">Video</button>
+          <button class="song-tab" data-media-tab="pptx">PowerPoint</button>
+        </div>
+
+        <div id="media-tab-image">
+          <input type="file" id="media-image-file" accept="image/*" style="font-size:11px; color:#999; width:100%;" />
+          <input type="text" id="media-image-title" placeholder="Title (optional)" class="form-input" style="margin-top:6px; font-size:12px; padding:7px 10px;" />
+          <button onclick="uploadMediaImage()" style="margin-top:8px; width:100%;">Upload Image</button>
+        </div>
+
+        <div id="media-tab-video" style="display:none;">
+          <input type="file" id="media-video-file" accept="video/*" style="font-size:11px; color:#999; width:100%;" />
+          <p style="font-size:10px; color:#666; margin:6px 0;">— or paste a link (YouTube, Vimeo, or a direct .mp4 link) —</p>
+          <input type="text" id="media-video-url" placeholder="https://youtube.com/watch?v=..." class="form-input" style="font-size:12px; padding:7px 10px;" />
+          <input type="text" id="media-video-title" placeholder="Title (optional)" class="form-input" style="margin-top:6px; font-size:12px; padding:7px 10px;" />
+          <button onclick="uploadMediaVideo()" style="margin-top:8px; width:100%;">Add Video</button>
+        </div>
+
+        <div id="media-tab-pptx" style="display:none;">
+          <input type="file" id="media-pptx-file" accept=".ppt,.pptx" style="font-size:11px; color:#999; width:100%;" />
+          <input type="text" id="media-pptx-title" placeholder="Title (optional)" class="form-input" style="margin-top:6px; font-size:12px; padding:7px 10px;" />
+          <button onclick="uploadMediaPptx()" style="margin-top:8px; width:100%;">Upload &amp; Convert</button>
+          <p style="font-size:10px; color:#666; margin:6px 0 0;">Conversion takes a few seconds per deck — larger decks take longer.</p>
+        </div>
+
+        <p id="media-status" style="font-size:12px; color:#999; margin-top:8px;"></p>
+        <div id="media-library" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
+      </div>
+
+      <h2 style="margin-top:24px;">Scripture</h2>
+      <div class="scripture-box">
+        <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" />
+        <select id="bible-version-select" style="width:100%; margin-top:6px; padding:7px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px;"></select>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button onclick="stageScripture()" ondblclick="stageScripture(true)" title="Click to stage · double-click to go live instantly">Stage in Preview</button>
+          <button class="secondary" onclick="addScriptureToSchedule()">+ Schedule</button>
+        </div>
+        <div class="quick-refs">
+          <button class="secondary" onclick="quickRef('John 3:16')" ondblclick="quickRef('John 3:16', true)" title="Click to stage · double-click to go live instantly">John 3:16</button>
+          <button class="secondary" onclick="quickRef('Genesis 1:1')" ondblclick="quickRef('Genesis 1:1', true)" title="Click to stage · double-click to go live instantly">Genesis 1:1</button>
+          <button class="secondary" onclick="quickRef('Psalm 23:1')" ondblclick="quickRef('Psalm 23:1', true)" title="Click to stage · double-click to go live instantly">Psalm 23:1</button>
+          <button class="secondary" onclick="quickRef('Romans 8:28')" ondblclick="quickRef('Romans 8:28', true)" title="Click to stage · double-click to go live instantly">Romans 8:28</button>
+          <button class="secondary" onclick="quickRef('Revelation 5:12')" ondblclick="quickRef('Revelation 5:12', true)" title="Click to stage · double-click to go live instantly">Revelation 5:12</button>
+        </div>
+        <p id="scripture-status" style="font-size:12px; color:#999; margin-top:6px;"></p>
+      </div>
+
+      <h2 style="margin-top:24px;">📢 Announcements / Ticker</h2>
+      <div class="scripture-box">
+        <p style="font-size:11px; color:#888; margin:0 0 8px;">
+          Type a notice, account number, or any message — it scrolls continuously along the bottom of the screen, under whatever is being projected.
+        </p>
+        <textarea id="ticker-input" rows="2" placeholder="e.g. Account: 1234567890 - GTBank (Building Fund) • Thanksgiving Service next Sunday 9AM" style="width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px; font-family:inherit; resize:vertical;"></textarea>
+        <div style="display:flex; gap:8px; margin:8px 0;">
+          <button id="ticker-toggle-btn" onclick="toggleTicker()">▶ Start Scrolling</button>
+          <button class="secondary" onclick="saveAnnouncement()">+ Save</button>
+        </div>
+        <div id="announcements-list" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
+    </div>
+
+    <div class="panel-preview">
+      <div class="preview-section">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin:10px 16px 0; position:relative;">
+          <h2 style="margin:0;">Preview <span style="font-size:10px; color:#666; font-weight:400;">(staged — not visible yet, true-to-scale miniature of Live)</span></h2>
+          <button class="secondary theme-toggle-btn" onclick="toggleThemePopover()" title="Choose a display theme">🎨 Theme</button>
+          <div id="theme-popover" class="theme-popover">
+            <div class="theme-popover-header">
+              <span>Choose a Theme</span>
+              <span class="modal-close" onclick="toggleThemePopover(false)">✕</span>
+            </div>
+            <div class="theme-picker" id="theme-picker">
+              <div class="theme-swatch swatch-photo active" data-theme="photo" title="Photo (each song's own background)"><span class="swatch-label">Photo</span></div>
+              <div class="theme-swatch swatch-classic" data-theme="classic" title="Classic Gold"><span class="swatch-label">Classic</span></div>
+              <div class="theme-swatch swatch-royal" data-theme="royal" title="Royal Purple"><span class="swatch-label">Royal</span></div>
+              <div class="theme-swatch swatch-crimson" data-theme="crimson" title="Crimson"><span class="swatch-label">Crimson</span></div>
+              <div class="theme-swatch swatch-emerald" data-theme="emerald" title="Emerald"><span class="swatch-label">Emerald</span></div>
+              <div class="theme-swatch swatch-midnight" data-theme="midnight" title="Midnight Blue"><span class="swatch-label">Midnight</span></div>
+              <div class="theme-swatch swatch-sunset" data-theme="sunset" title="Sunset"><span class="swatch-label">Sunset</span></div>
+              <div class="theme-swatch swatch-pure" data-theme="pure" title="Pure Light"><span class="swatch-label">Pure</span></div>
+              <div class="theme-swatch swatch-blank" data-theme="blank" title="Blank (plain black)"><span class="swatch-label">Blank</span></div>
+              <div id="custom-theme-swatches"></div>
+              <div class="theme-swatch swatch-add" id="add-theme-tile" onclick="openAddThemeForm()" title="Add your own theme">
+                <span class="add-theme-plus">+</span>
+              </div>
+            </div>
+            <div id="add-theme-form" class="add-theme-form" style="display:none;">
+              <input type="text" id="new-theme-name" placeholder="Theme name (e.g. Christmas)" class="form-input" style="margin-bottom:8px; font-size:12px; padding:7px 10px;" />
+              <div class="theme-mode-tabs">
+                <button type="button" class="theme-mode-tab active" data-mode="gradient" onclick="setThemeMode('gradient')">Gradient</button>
+                <button type="button" class="theme-mode-tab" data-mode="image" onclick="setThemeMode('image')">My Own Image</button>
+              </div>
+              <div id="theme-mode-gradient">
+                <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+                  <label style="font-size:11px; color:#999;">From <input type="color" id="new-theme-color1" value="#1b1b35" style="vertical-align:middle;"></label>
+                  <label style="font-size:11px; color:#999;">To <input type="color" id="new-theme-color2" value="#06060d" style="vertical-align:middle;"></label>
+                </div>
+              </div>
+              <div id="theme-mode-image" style="display:none; margin-bottom:10px;">
+                <input type="file" id="new-theme-image-file" accept="image/*" style="font-size:11px; color:#999; width:100%;" />
+                <p style="font-size:10px; color:#666; margin:6px 0 0;">JPG or PNG, up to 8MB. It'll be stretched to fill the screen behind the lyrics.</p>
+                <img id="new-theme-image-preview" style="display:none; max-width:100%; max-height:70px; margin-top:6px; border-radius:4px;" />
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button onclick="saveCustomTheme()" style="flex:1; font-size:12px; padding:7px;">Save Theme</button>
+                <button class="secondary" onclick="openAddThemeForm(false)" style="font-size:12px; padding:7px;">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="preview-frame preview-frame-staged">
+          <iframe src="/display?mode=preview"></iframe>
+        </div>
+        <div style="padding:4px 16px; display:flex; gap:10px;">
+          <button onclick="goLive()" style="flex:1; font-size:14px; padding:8px;">▶ GO LIVE</button>
+          <button class="secondary" onclick="prevSlide()" title="Previous slide (←)">⬅</button>
+          <button class="secondary" onclick="nextSlide()" title="Next slide (→)">➡</button>
+        </div>
+      </div>
+      <div class="preview-section">
+        <h2 style="margin:2px 16px 0;">Live <span style="font-size:10px; color:#666; font-weight:400;">(audience sees this)</span></h2>
+        <div class="preview-frame">
+          <iframe src="/display"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Song Modal -->
+  <div id="add-song-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Add Your Own Song</h2>
+        <span class="modal-close" onclick="closeAddSongModal()">✕</span>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-row">
+          <label>Song Title</label>
+          <input type="text" id="new-song-title" placeholder="e.g. Is He Worthy?" class="form-input" />
+        </div>
+
+        <div class="form-row">
+          <label>Artist or Choir <span class="label-optional">(optional)</span></label>
+          <input type="text" id="new-song-artist" placeholder="e.g. Peculiar Voices" class="form-input" />
+        </div>
+
+        <div class="form-row">
+          <label>Lyrics</label>
+          <p class="form-hint">
+            Just paste or type the whole song below. <strong>Leave one blank line between each verse/chorus</strong> —
+            we'll automatically split it into slides for you.
+          </p>
+          <textarea id="new-song-lyrics" class="form-textarea" rows="12" placeholder="Is He worthy? Is He worthy?
+Of all blessing and honor and glory?
+Is He worthy of this?
+
+He is worthy, He is worthy
+He is worthy, worthy worthy
+
+(Each blank line = a new slide. Easy!)"></textarea>
+        </div>
+
+        <div class="lyrics-preview" id="lyrics-preview">
+          <span class="lyrics-preview-empty">Start typing above — a live preview of your slides appears here.</span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="secondary" onclick="closeAddSongModal()">Cancel</button>
+        <button onclick="submitNewSong()">Save Song</button>
+      </div>
+      <p id="add-song-status" class="form-status"></p>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/bible-books.js"></script>
+  <script src="/js/control.js"></script>
+</body>
+</html>
