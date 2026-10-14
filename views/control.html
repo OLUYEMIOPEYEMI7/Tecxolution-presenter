@@ -97,11 +97,15 @@
 
       <h2 style="margin-top:24px;">Scripture</h2>
       <div class="scripture-box">
-        <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" />
+        <div style="position:relative;">
+          <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" autocomplete="off" />
+          <div id="book-suggestions" class="book-suggestions"></div>
+        </div>
         <select id="bible-version-select" style="width:100%; margin-top:6px; padding:7px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px;"></select>
         <div style="display:flex; gap:8px; margin-top:6px;">
           <button onclick="stageScripture()" ondblclick="stageScripture(true)" title="Click to stage · double-click to go live instantly">Stage in Preview</button>
           <button class="secondary" onclick="addScriptureToSchedule()">+ Schedule</button>
+          <button class="secondary" onclick="openBibleBrowser()" title="Click through Book → Chapter → Verse, no typing needed">📖 Browse</button>
         </div>
         <div class="quick-refs">
           <button class="secondary" onclick="quickRef('John 3:16')" ondblclick="quickRef('John 3:16', true)" title="Click to stage · double-click to go live instantly">John 3:16</button>
@@ -229,6 +233,44 @@
     </div>
   </div>
 
+  <!-- Bible Browser Modal: click Book -> Chapter -> Verse, EasyWorship-style -->
+  <div id="bible-browser-modal" class="modal-overlay">
+    <div class="modal-box" style="max-width:720px;">
+      <div class="modal-header">
+        <h2 id="bible-browser-title">Browse the Bible</h2>
+        <span class="modal-close" onclick="closeBibleBrowser()">✕</span>
+      </div>
+      <div class="modal-body">
+        <div id="bible-browser-crumbs" class="bible-crumbs" style="display:none;"></div>
+
+        <div id="bible-browser-step-books">
+          <input type="text" id="bible-browser-search" placeholder="Type a book name… e.g. G for Genesis" class="form-input" style="margin-bottom:14px;" autocomplete="off" />
+          <div class="bible-book-columns">
+            <div>
+              <h3 class="bible-testament-head">Old Testament</h3>
+              <div id="bible-books-ot" class="bible-book-list"></div>
+            </div>
+            <div>
+              <h3 class="bible-testament-head">New Testament</h3>
+              <div id="bible-books-nt" class="bible-book-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="bible-browser-step-chapters" style="display:none;">
+          <div id="bible-chapter-grid" class="bible-number-grid"></div>
+        </div>
+
+        <div id="bible-browser-step-verses" style="display:none;">
+          <div id="bible-verse-grid" class="bible-number-grid"></div>
+        </div>
+      </div>
+      <p id="bible-browser-hint" class="form-status" style="padding:0 24px 16px; margin:0; color:#888; font-size:11px;">
+        Click a verse to stage it · double-click to go live instantly.
+      </p>
+    </div>
+  </div>
+
   <!-- Add Song Modal -->
   <div id="add-song-modal" class="modal-overlay">
     <div class="modal-box">
@@ -279,6 +321,7 @@ He is worthy, worthy worthy
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/bible-books.js"></script>
+  <script src="/js/bible-structure.js"></script>
   <script src="/js/voice-detect.js"></script>
   <script src="/js/control.js"></script>
 </body>

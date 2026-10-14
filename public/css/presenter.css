@@ -862,3 +862,95 @@ button.danger:hover { background: var(--danger); box-shadow: 0 4px 14px rgba(239
 .preview-slide-chip .chip-text { color: var(--text-soft); }
 .preview-slide-chip .chip-label { color: var(--gold); font-weight: 700; margin-right: 4px; }
 .live-dot.on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+
+/* ============== Bible Browser (Book -> Chapter -> Verse) ============== */
+.book-suggestions {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  z-index: 20;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.book-suggestions.open { display: block; }
+.book-suggestion-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.book-suggestion-item:hover,
+.book-suggestion-item.active { background: var(--panel-0); }
+.book-suggestion-item .testament-tag {
+  font-size: 10px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bible-crumbs {
+  font-size: 12px;
+  color: var(--text-mute);
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+.bible-crumbs span { color: var(--gold-bright); }
+.bible-crumbs span:hover { text-decoration: underline; }
+
+.bible-book-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.bible-testament-head {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--gold);
+  margin: 0 0 8px;
+}
+.bible-book-list {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bible-book-item {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+.bible-book-item:hover { background: var(--panel-0); }
+
+.bible-number-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 7px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.bible-number-btn {
+  padding: 10px 0;
+  text-align: center;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-0);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.12s ease;
+}
+.bible-number-btn:hover { background: var(--deep-gold); color: #1a1000; border-color: var(--deep-gold); }

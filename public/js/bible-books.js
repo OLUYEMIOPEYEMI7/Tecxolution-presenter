@@ -117,7 +117,15 @@ function normalizeSpokenNumbers(text) {
  * or null. Handles forms like:
  *   "genesis 1 1", "genesis chapter 1 verse 1", "genesis 1 verse 1",
  *   "john 3 16", "psalm 23 1", "genesis 1" (chapter only)
+ *
+ * Deliberately narrow: only looks at the words immediately following a book
+ * name (not the whole rolling transcript buffer), so normal sermon speech
+ * that happens to mention a book name and an unrelated number later on
+ * doesn't get misread as a citation — e.g. "like John, who was baptizing
+ * for 40 days" must never turn into "John 40".
  */
+const REFERENCE_WINDOW_WORDS = 4; // e.g. "chapter", "one", "verse", "sixteen"
+
 function findScriptureReference(rawText) {
   const text = normalizeSpokenNumbers(rawText.toLowerCase().replace(/[.,!?]/g, ' '));
 
@@ -131,7 +139,10 @@ function findScriptureReference(rawText) {
     if (before && /[a-z]/.test(before)) continue;
     if (after && /[a-z]/.test(after)) continue;
 
-    const rest = text.slice(idx + alias.length);
+    // Only look a few words ahead — a number mentioned much later in the
+    // sentence/buffer is unrelated, not part of this citation.
+    const restWords = text.slice(idx + alias.length).trim().split(/\s+/).slice(0, REFERENCE_WINDOW_WORDS);
+    const rest = restWords.join(' ');
     // Strip connector words like "chapter", "verse", "and", ":"
     const cleaned = rest.replace(/\b(chapter|verse|and|the)\b/g, ' ').replace(/:/g, ' ');
     const nums = cleaned.match(/\d+/g);

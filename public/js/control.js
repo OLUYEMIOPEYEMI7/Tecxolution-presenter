@@ -405,6 +405,163 @@ function quickRef(ref, thenGoLive) {
   stageScripture(thenGoLive);
 }
 
+// ================= Book name type-ahead (EasyWorship-style: type "G" -> Genesis) =================
+// Shows suggestions only while the user is still typing the book name itself
+// (no digits yet) — once a chapter number appears we assume the book is
+// chosen and get out of the way.
+const scriptureInputEl = document.getElementById('scripture-input');
+const bookSuggestionsEl = document.getElementById('book-suggestions');
+let bookSuggestionActive = -1;
+
+function currentBookSuggestions(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return BIBLE_STRUCTURE.filter((b) => b.name.toLowerCase().startsWith(q)).slice(0, 8);
+}
+
+function renderBookSuggestions(list) {
+  bookSuggestionActive = -1;
+  if (list.length === 0) {
+    bookSuggestionsEl.classList.remove('open');
+    bookSuggestionsEl.innerHTML = '';
+    return;
+  }
+  bookSuggestionsEl.innerHTML = list.map((b, i) => `
+    <div class="book-suggestion-item" data-idx="${i}" onclick="pickBookSuggestion('${b.name.replace(/'/g, "\\'")}')">
+      <span>${escapeHtmlLocal(b.name)}</span>
+      <span class="testament-tag">${b.testament === 'OT' ? 'Old Testament' : 'New Testament'}</span>
+    </div>
+  `).join('');
+  bookSuggestionsEl.classList.add('open');
+}
+
+function pickBookSuggestion(bookName) {
+  scriptureInputEl.value = bookName + ' ';
+  bookSuggestionsEl.classList.remove('open');
+  scriptureInputEl.focus();
+}
+
+scriptureInputEl.addEventListener('input', () => {
+  const val = scriptureInputEl.value;
+  // Once a digit shows up, the operator has moved on to chapter:verse — stop suggesting.
+  if (/\d/.test(val)) {
+    bookSuggestionsEl.classList.remove('open');
+    return;
+  }
+  renderBookSuggestions(currentBookSuggestions(val));
+});
+
+scriptureInputEl.addEventListener('keydown', (e) => {
+  const items = bookSuggestionsEl.querySelectorAll('.book-suggestion-item');
+  if (!bookSuggestionsEl.classList.contains('open') || items.length === 0) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    bookSuggestionActive = Math.min(bookSuggestionActive + 1, items.length - 1);
+    items.forEach((el, i) => el.classList.toggle('active', i === bookSuggestionActive));
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    bookSuggestionActive = Math.max(bookSuggestionActive - 1, 0);
+    items.forEach((el, i) => el.classList.toggle('active', i === bookSuggestionActive));
+  } else if (e.key === 'Enter' && bookSuggestionActive >= 0) {
+    e.preventDefault();
+    items[bookSuggestionActive].click();
+  } else if (e.key === 'Escape') {
+    bookSuggestionsEl.classList.remove('open');
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (!bookSuggestionsEl.contains(e.target) && e.target !== scriptureInputEl) {
+    bookSuggestionsEl.classList.remove('open');
+  }
+});
+
+// ================= Bible Browser modal (Book -> Chapter -> Verse, click-through) =================
+let bibleBrowserBook = null;
+let bibleBrowserChapter = null;
+
+function openBibleBrowser() {
+  document.getElementById('bible-browser-modal').classList.add('open');
+  document.getElementById('bible-browser-search').value = '';
+  showBibleBrowserStep('books');
+  renderBibleBrowserBookLists('');
+  setTimeout(() => document.getElementById('bible-browser-search').focus(), 50);
+}
+
+function closeBibleBrowser() {
+  document.getElementById('bible-browser-modal').classList.remove('open');
+}
+
+function showBibleBrowserStep(step) {
+  document.getElementById('bible-browser-step-books').style.display = step === 'books' ? '' : 'none';
+  document.getElementById('bible-browser-step-chapters').style.display = step === 'chapters' ? '' : 'none';
+  document.getElementById('bible-browser-step-verses').style.display = step === 'verses' ? '' : 'none';
+  renderBibleBrowserCrumbs(step);
+}
+
+function renderBibleBrowserCrumbs(step) {
+  const el = document.getElementById('bible-browser-crumbs');
+  if (step === 'books') {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  let html = `<span onclick="showBibleBrowserStep('books')">Books</span>`;
+  if (step === 'chapters' || step === 'verses') html += ` › ${bibleBrowserBook}`;
+  if (step === 'verses') html += ` <span onclick="backToBibleChapters()">› Chapter ${bibleBrowserChapter}</span>`;
+  el.innerHTML = html;
+}
+
+function backToBibleChapters() {
+  showBibleBrowserStep('chapters');
+}
+
+function renderBibleBrowserBookLists(filter) {
+  const q = filter.trim().toLowerCase();
+  const matches = (testament) => BIBLE_STRUCTURE.filter((b) =>
+    b.testament === testament && (!q || b.name.toLowerCase().includes(q))
+  );
+  const renderList = (books) => books.map((b) =>
+    `<div class="bible-book-item" onclick="selectBibleBrowserBook('${b.name.replace(/'/g, "\\'")}')">${escapeHtmlLocal(b.name)}</div>`
+  ).join('') || '<p style="color:#666; font-size:12px;">No matching books.</p>';
+  document.getElementById('bible-books-ot').innerHTML = renderList(matches('OT'));
+  document.getElementById('bible-books-nt').innerHTML = renderList(matches('NT'));
+}
+
+document.getElementById('bible-browser-search').addEventListener('input', (e) => {
+  renderBibleBrowserBookLists(e.target.value);
+});
+
+function selectBibleBrowserBook(bookName) {
+  bibleBrowserBook = bookName;
+  const book = BIBLE_STRUCTURE.find((b) => b.name === bookName);
+  if (!book) return;
+  document.getElementById('bible-browser-title').textContent = bookName + ' — choose a chapter';
+  document.getElementById('bible-chapter-grid').innerHTML = book.chapters.map((_, i) =>
+    `<div class="bible-number-btn" onclick="selectBibleBrowserChapter(${i + 1})">${i + 1}</div>`
+  ).join('');
+  showBibleBrowserStep('chapters');
+}
+
+function selectBibleBrowserChapter(num) {
+  bibleBrowserChapter = num;
+  const book = BIBLE_STRUCTURE.find((b) => b.name === bibleBrowserBook);
+  if (!book) return;
+  const verseCount = book.chapters[num - 1];
+  document.getElementById('bible-browser-title').textContent = `${bibleBrowserBook} ${num} — choose a verse`;
+  document.getElementById('bible-verse-grid').innerHTML = Array.from({ length: verseCount }, (_, i) =>
+    `<div class="bible-number-btn" onclick="selectBibleBrowserVerse(${i + 1})" ondblclick="selectBibleBrowserVerse(${i + 1}, true)">${i + 1}</div>`
+  ).join('');
+  showBibleBrowserStep('verses');
+}
+
+function selectBibleBrowserVerse(num, thenGoLive) {
+  const ref = `${bibleBrowserBook} ${bibleBrowserChapter}:${num}`;
+  scriptureInputEl.value = ref;
+  stageScripture(thenGoLive);
+  closeBibleBrowser();
+}
+
 // ================= Free Text (type-and-go-live, no presentation needed) =================
 function stageFreeText(thenGoLive) {
   const text = document.getElementById('free-text-input').value.trim();
