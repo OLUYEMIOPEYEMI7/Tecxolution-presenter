@@ -26,22 +26,32 @@ function showFullscreenPrompt() {
   document.body.appendChild(btn);
 }
 
-if (new URLSearchParams(location.search).get('launch') === '1') {
-  document.documentElement.requestFullscreen().catch(() => showFullscreenPrompt());
-} else {
-  // Opened via the plain fallback path (no ?launch=1) — no activation was
-  // ever available for auto-fullscreen, so go straight to the one-click prompt.
-  showFullscreenPrompt();
-}
+// Control Room's Preview and Live panels embed this exact /display page in
+// iframes to show a miniature live-matching view to the operator. The
+// fullscreen prompt below is only for the REAL projection window (opened
+// as its own top-level window via "Open Projection Screen") — inside an
+// iframe it would cover the operator's Preview/Live panes with a giant
+// black button and hide the content entirely, which is its own bug.
+const isEmbeddedPreview = window.self !== window.top;
 
-// If fullscreen is ever exited unexpectedly (Esc, alt-tab on some systems,
-// a second monitor being unplugged) during a live service, surface the
-// same one-click button again instead of silently leaving a windowed view.
-document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement && !document.getElementById('fullscreen-prompt-btn')) {
+if (!isEmbeddedPreview) {
+  if (new URLSearchParams(location.search).get('launch') === '1') {
+    document.documentElement.requestFullscreen().catch(() => showFullscreenPrompt());
+  } else {
+    // Opened via the plain fallback path (no ?launch=1) — no activation was
+    // ever available for auto-fullscreen, so go straight to the one-click prompt.
     showFullscreenPrompt();
   }
-});
+
+  // If fullscreen is ever exited unexpectedly (Esc, alt-tab on some systems,
+  // a second monitor being unplugged) during a live service, surface the
+  // same one-click button again instead of silently leaving a windowed view.
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && !document.getElementById('fullscreen-prompt-btn')) {
+      showFullscreenPrompt();
+    }
+  });
+}
 
 
 const stage = document.getElementById('stage');
