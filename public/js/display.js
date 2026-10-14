@@ -1,5 +1,13 @@
 const socket = io();
 
+// Auto-fullscreen when launched from the Control Room's "Open Projection
+// Screen" button (carries activation from that click in Chrome/Edge, so
+// this works without a second click from the operator).
+if (new URLSearchParams(location.search).get('launch') === '1') {
+  document.documentElement.requestFullscreen().catch(() => {});
+}
+
+
 const stage = document.getElementById('stage');
 const stageBg = document.getElementById('stage-bg');
 const stageContent = document.getElementById('stage-content');
