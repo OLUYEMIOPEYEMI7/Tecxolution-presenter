@@ -954,3 +954,28 @@ button.danger:hover { background: var(--danger); box-shadow: 0 4px 14px rgba(239
   transition: 0.12s ease;
 }
 .bible-number-btn:hover { background: var(--deep-gold); color: #1a1000; border-color: var(--deep-gold); }
+
+/* ============== Old/New Testament quick dropdowns (Scripture panel) ============== */
+.testament-dropdown-wrap { position: relative; flex: 1; }
+.testament-pill { width: 100%; }
+.testament-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  z-index: 25;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.testament-dropdown.open { display: block; }
+.testament-dropdown-item {
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.testament-dropdown-item:hover { background: var(--panel-0); }

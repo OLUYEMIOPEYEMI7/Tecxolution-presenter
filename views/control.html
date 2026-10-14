@@ -101,6 +101,16 @@
           <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" autocomplete="off" />
           <div id="book-suggestions" class="book-suggestions"></div>
         </div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <div class="testament-dropdown-wrap">
+            <button type="button" class="secondary testament-pill" onclick="toggleTestamentDropdown('OT')">Old Testament ▾</button>
+            <div id="testament-dropdown-OT" class="testament-dropdown"></div>
+          </div>
+          <div class="testament-dropdown-wrap">
+            <button type="button" class="secondary testament-pill" onclick="toggleTestamentDropdown('NT')">New Testament ▾</button>
+            <div id="testament-dropdown-NT" class="testament-dropdown"></div>
+          </div>
+        </div>
         <select id="bible-version-select" style="width:100%; margin-top:6px; padding:7px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px;"></select>
         <div style="display:flex; gap:8px; margin-top:6px;">
           <button onclick="stageScripture()" ondblclick="stageScripture(true)" title="Click to stage · double-click to go live instantly">Stage in Preview</button>
@@ -155,6 +165,7 @@
         <p style="font-size:11px; color:#888; margin:0 0 8px;">
           Listens for spoken references like "Genesis chapter one verse one" and projects them automatically (bypasses Preview — goes straight Live).
           Uncheck Auto-project to require a confirm click instead.
+          <strong style="color:#c99;">Needs a stable internet connection</strong> — it streams audio to the browser's cloud speech service, so it can stall on weak WiFi (it will auto-recover and tell you when that happens).
         </p>
         <div id="voice-status" style="font-size:12px; color:#999; margin-bottom:6px;">Not listening</div>
         <div id="voice-suggestion" style="display:none; background:#2c2c13; border:1px solid var(--gold); border-radius:6px; padding:8px; margin-bottom:8px;">

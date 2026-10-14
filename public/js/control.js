@@ -464,6 +464,7 @@ scriptureInputEl.addEventListener('keydown', (e) => {
     items.forEach((el, i) => el.classList.toggle('active', i === bookSuggestionActive));
   } else if (e.key === 'Enter' && bookSuggestionActive >= 0) {
     e.preventDefault();
+    e.stopImmediatePropagation(); // picking a book name is not a complete ref — don't also try to stage it
     items[bookSuggestionActive].click();
   } else if (e.key === 'Escape') {
     bookSuggestionsEl.classList.remove('open');
@@ -473,6 +474,40 @@ scriptureInputEl.addEventListener('keydown', (e) => {
 document.addEventListener('click', (e) => {
   if (!bookSuggestionsEl.contains(e.target) && e.target !== scriptureInputEl) {
     bookSuggestionsEl.classList.remove('open');
+  }
+});
+
+// ================= Old/New Testament quick dropdowns =================
+// Click "Old Testament ▾" / "New Testament ▾" to drop down the full book
+// list for that half of the Bible — an alternative to typing, for anyone
+// who'd rather browse than type the first letter.
+function renderTestamentDropdown(testament) {
+  const el = document.getElementById('testament-dropdown-' + testament);
+  const books = BIBLE_STRUCTURE.filter((b) => b.testament === testament);
+  el.innerHTML = books.map((b) =>
+    `<div class="testament-dropdown-item" onclick="pickTestamentBook('${b.name.replace(/'/g, "\\'")}', '${testament}')">${escapeHtmlLocal(b.name)}</div>`
+  ).join('');
+}
+renderTestamentDropdown('OT');
+renderTestamentDropdown('NT');
+
+function toggleTestamentDropdown(testament) {
+  const el = document.getElementById('testament-dropdown-' + testament);
+  const other = testament === 'OT' ? 'NT' : 'OT';
+  document.getElementById('testament-dropdown-' + other).classList.remove('open');
+  el.classList.toggle('open');
+}
+
+function pickTestamentBook(bookName, testament) {
+  scriptureInputEl.value = bookName + ' ';
+  document.getElementById('testament-dropdown-' + testament).classList.remove('open');
+  scriptureInputEl.focus();
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.testament-dropdown-wrap')) {
+    document.getElementById('testament-dropdown-OT').classList.remove('open');
+    document.getElementById('testament-dropdown-NT').classList.remove('open');
   }
 });
 
@@ -666,9 +701,26 @@ async function openDisplay() {
   );
 }
 
+// Pressing Enter stages the reference; pressing Enter again with the exact
+// same text already staged sends it straight to Live — a fast "type once,
+// hit Enter twice" workflow without needing to reach for the mouse.
+let lastEnterStagedRef = null;
 document.getElementById('scripture-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { stageScripture(); e.stopPropagation(); }
+  if (e.key !== 'Enter') return;
+  // If a book-name suggestion dropdown is open, that handler (registered
+  // above) already consumes this Enter to pick the suggestion — don't also
+  // try to stage/go-live on the same keypress.
+  if (bookSuggestionsEl.classList.contains('open') && bookSuggestionActive >= 0) return;
+  e.stopPropagation();
+  const val = scriptureInputEl.value.trim();
+  if (val && val === lastEnterStagedRef) {
+    goLive();
+  } else {
+    stageScripture();
+    lastEnterStagedRef = val;
+  }
 });
+scriptureInputEl.addEventListener('input', () => { lastEnterStagedRef = null; });
 
 // ================= Schedule (service run-list, persisted server-side) =================
 let schedule = [];
