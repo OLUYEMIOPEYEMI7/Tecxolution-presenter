@@ -37,6 +37,15 @@ npm test        # end-to-end tests (auth, socket gating, validation, uploads, pe
 `Enter`/`Space` go live · `B` black · `L` logo · `C` clear text (press again to restore the same slide) ·
 `Esc` clear all · `?` shortcut help. `Shift+Enter` in search goes straight live.
 
+## Finding songs and scripture
+- **Search** (song box or `Ctrl+K`) matches the title, artist, hymn number **and any words from the lyrics**, best matches
+  first, with the matching lyric line highlighted. Word order and punctuation don't matter; one misremembered word still finds it.
+- Songs imported as titles only show **NO LYRICS**; the footer link lists them. **Import lyrics** (menu or song panel) fills them from
+  pasted text or `.txt` files you are licensed to use (`### Title | Artist` then the lyrics). It never overwrites existing lyrics.
+- **Scripture navigator:** after any verse is shown, use **◀ Verse / Verse ▶ / ⏮ ⏭** under GO LIVE, the keys `[` `]` (verse) and
+  `{` `}` (chapter), or click any verse in the **chapter view** (Scripture tab; double-click = live, Shift+click = range).
+  "Live as I click" sends each pick straight to the projector. References are always shown properly ("jn 3:16" → "John 3:16").
+
 ## Control room
 Tabbed workspace (Slides · Schedule · Scripture · Media · Text & Ticker · Tools), a persistent **LIVE bar**
 (what is on screen, for how long, with Black/Logo/Clear), slide **thumbnails** with the live slide highlighted,

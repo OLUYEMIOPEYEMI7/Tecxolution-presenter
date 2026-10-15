@@ -223,6 +223,41 @@ test('songs: validation + CRUD + search', async () => {
   assert.strictEqual((await api('/api/songs/' + song.id, { method: 'DELETE' })).status, 200);
 });
 
+test('search API: lyric keywords, snippets, placeholders, needs-lyrics filter', async () => {
+  const post = (body) => api('/api/songs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const withLyrics = await (await post({ title: 'Total Praise Test', artist: 'RS', sections: [{ label: 'VERSE 1', pairs: [['Blessed be the name of the Lord', ''], ['whose name is above every name', '']] }] })).json();
+  const stub = await (await post({ title: 'Baruch Hashem Adonai (Live)', artist: 'Dunsin Oyekan', sections: [{ label: 'NOTE', pairs: [['(Lyrics not yet added for this song.)', '']] }] })).json();
+  const find = async (q) => (await (await api('/api/songs?q=' + encodeURIComponent(q))).json());
+  const r = await find('name of the lord');
+  const hit = r.songs.find((x) => x.id === withLyrics.id);
+  assert.ok(hit, 'found by lyric phrase');
+  assert.match(hit.snippet.text, /name of the Lord/i);
+  assert.strictEqual(hit.hasLyrics, true);
+  assert.strictEqual((await find('lyrics')).songs.length, 0, 'placeholder text is not searchable');
+  const b = (await find('baruch')).songs.find((x) => x.id === stub.id);
+  assert.ok(b && b.hasLyrics === false);
+  const full = await (await api('/api/songs/' + stub.id)).json();
+  assert.deepStrictEqual(full.sections, [], 'stub opens with an empty editor, not the note');
+  const nl = await (await api('/api/songs?source=nolyrics')).json();
+  assert.ok(nl.songs.some((x) => x.id === stub.id) && !nl.songs.some((x) => x.id === withLyrics.id));
+  assert.ok(nl.needsLyrics >= 1);
+  // import fills the stub in place (matches "(Live)" title), skips songs that already have lyrics
+  const imp = await (await api('/api/songs/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ songs: [
+    { title: 'Baruch Hashem Adonai', artist: 'Dunsin Oyekan', lyrics: 'Verse 1\nfirst test line\nsecond test line\n\nChorus\nchorus test line' },
+    { title: 'Total Praise Test', lyrics: 'should not overwrite' },
+    { title: 'Brand New Song', lyrics: 'a line\nanother line' },
+    { title: 'No Lyrics Here', lyrics: '   ' },
+  ] }) })).json();
+  assert.deepStrictEqual([imp.updated, imp.created, imp.skipped], [1, 1, 2]);
+  const after = await (await api('/api/songs/' + stub.id)).json();
+  assert.deepStrictEqual(after.sections.map((x) => x.label), ['VERSE 1', 'CHORUS']);
+  assert.ok((await find('first test line')).songs.some((x) => x.id === stub.id), 'now searchable by lyrics');
+  const again = await (await api('/api/songs/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ songs: [{ title: 'Baruch Hashem Adonai', lyrics: 'overwrite attempt' }] }) })).json();
+  assert.strictEqual(again.skipped, 1, 'never overwrites existing lyrics');
+  assert.strictEqual((await api('/api/songs/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 400);
+  for (const id of [withLyrics.id, stub.id]) await api('/api/songs/' + id, { method: 'DELETE' });
+});
+
 test('uploads: content is verified by bytes, not by claimed type', async () => {
   const fake = new FormData();
   fake.append('file', new Blob(['<html><script>alert(1)</script></html>'], { type: 'image/png' }), 'evil.png');

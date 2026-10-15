@@ -260,13 +260,14 @@
       const ref = m[1].trim() + ' ' + m[2] + (m[3] ? ':' + m[3] + (m[4] ? '-' + m[4] : '') : '');
       items.push({ group: 'Scripture', main: 'Show ' + ref, sub: 'Enter = stage · Shift+Enter = live', run: (live) => { $('scripture-input').value = ref; stageScripture(live); } });
     }
-    const local = songMatches(q);
+    const srv = new Map((serverSongs || []).map((s) => [s.id, s]));
+    const local = songMatches(q).map((s) => ({ ...s, snippet: srv.get(s.id) && srv.get(s.id).snippet }));
     const seen = new Set(local.map((s) => s.id));
     const lyric = (serverSongs || []).filter((s) => !seen.has(s.id)).slice(0, 6);
     local.concat(lyric).forEach((s, i) => items.push({
       group: i < local.length ? 'Songs' : 'Songs (found in lyrics)',
-      main: (s.hymnNumber ? '#' + s.hymnNumber + '  ' : '') + s.title,
-      sub: s.artist || '',
+      main: (s.hymnNumber ? '#' + s.hymnNumber + '  ' : '') + s.title + (s.hasLyrics === false ? '  · no lyrics yet' : ''),
+      sub: s.snippet ? '“' + s.snippet.text.slice(0, 70) + '”' : (s.artist || ''),
       run: (live) => { if (live) loadScheduleItem({ id: null, stateType: 'whole-song', songId: s.id }, true); else { selectSong(s); } },
     }));
     const ql = q.toLowerCase();
@@ -328,6 +329,8 @@
     if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === '/') { e.preventDefault(); openPalette(); }
     else if (e.key === '?') { e.preventDefault(); openShortcuts(); }
+    else if ((e.key === ']' || e.key === '[') && window.scrNav && scrNav.active()) { e.preventDefault(); scrNav.step(e.key === ']' ? 1 : -1); }
+    else if ((e.key === '}' || e.key === '{') && window.scrNav && scrNav.active()) { e.preventDefault(); scrNav.chapter(e.key === '}' ? 1 : -1); }
     else if (/^[1-9]$/.test(e.key)) {
       const card = document.querySelectorAll('#slide-list .slide-card')[Number(e.key) - 1];
       if (card) { card.click(); card.scrollIntoView({ block: 'nearest' }); e.preventDefault(); }

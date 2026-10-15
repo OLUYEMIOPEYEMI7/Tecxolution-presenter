@@ -204,3 +204,42 @@ kbd { font: 600 10px/1 var(--font-ui); padding: 3px 5px; border-radius: 4px; bac
   .header-right button:not(.icon-btn):not(.secondary) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .tab-pane.active, .toast, .livebar.is-live .rec-dot { animation: none; } }
+
+/* ---------- song search results ---------- */
+mark { background: rgba(232,184,79,0.28); color: var(--gold-bright); border-radius: 3px; padding: 0 2px; }
+.song-snippet { font-size: 11.5px; color: var(--text-soft); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); line-height: 1.4; font-style: italic; }
+.song-snippet b { font-style: normal; font-size: 9.5px; letter-spacing: 1px; color: var(--gold); margin-right: 3px; }
+.song-badge.nolyrics { background: rgba(239,74,86,0.14); color: #ff8a93; border: 1px solid rgba(239,74,86,0.35); }
+#song-list-footer a { color: var(--gold); cursor: pointer; text-decoration: none; }
+#song-list-footer a:hover { text-decoration: underline; }
+.add-song-row { display: flex; gap: 8px; }
+.add-song-row .add-song-btn { flex: 1; }
+.import-example { background: var(--panel-0); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--text-soft); margin: 0 0 12px; white-space: pre-wrap; }
+.import-results { max-height: 200px; overflow-y: auto; }
+.import-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 5px 8px; border-radius: 6px; color: var(--text-soft); }
+.import-row.created, .import-row.updated { color: #6fcf97; }
+.import-row.skipped { color: var(--text-mute); }
+code { background: var(--panel-3); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--gold-bright); }
+
+/* ---------- scripture navigator ---------- */
+.verse-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 16px 2px; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--border-gold); border-radius: 10px; }
+.verse-bar button { padding: 7px 10px; font-size: 12px; }
+.verse-bar-ref { flex: 1; text-align: center; font-weight: 700; color: var(--gold-bright); font-size: 13px; min-width: 110px; }
+.verse-bar .check { font-size: 11px; color: var(--text-soft); display: flex; align-items: center; gap: 5px; width: 100%; justify-content: center; }
+.verse-bar .check input { accent-color: var(--gold); }
+.cv-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.cv-head strong { color: var(--text); font-size: 14px; }
+.cv-head button { padding: 6px 12px; }
+.cv-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-0); }
+.verse-row { display: flex; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; line-height: 1.45; color: var(--text-soft); }
+.verse-row:last-child { border-bottom: 0; }
+.verse-row b { color: var(--gold); min-width: 24px; text-align: right; flex-shrink: 0; }
+.verse-row:hover { background: var(--panel-2); }
+.verse-row.sel { background: var(--gold-wash); color: var(--text); box-shadow: inset 3px 0 0 var(--gold); }
+.verse-row.live { box-shadow: inset 3px 0 0 var(--live-red); }
+.verse-row.live b::after { content: ' ●'; color: var(--live-red); font-size: 9px; }
+.cv-note { padding: 14px; font-size: 12.5px; color: var(--text-mute); }
+.cv-numbers { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 12px; }
+.cv-num { padding: 6px 0; width: 38px; font-size: 12px; }
+.cv-num.sel { background: var(--gold); color: #1a1000; }
+.cv-num.live { outline: 2px solid var(--live-red); }
