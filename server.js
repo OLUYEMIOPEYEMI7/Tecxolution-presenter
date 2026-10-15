@@ -687,6 +687,52 @@ app.put('/api/songs/:id', async (req, res) => {
 //    / ministry use (works anonymously, no key required, within fair limits).
 //  - api.scripture.api.bible for NIV / AMP / MSG — needs a registered API key
 //    (API_BIBLE_KEY env var) that the user obtains themselves.
+//
+// PERFORMANCE: this used to hit the external API fresh on EVERY single
+// lookup — typed, voice-detected, or re-displaying the same verse twice in
+// a service — which is why scripture (and Voice Detect, which calls this
+// same endpoint) could feel slow to appear. Bible text for a given
+// reference+version never changes, so results are cached in memory for the
+// life of the server: the first lookup of a verse pays the network cost,
+// every repeat of it (extremely common — a preacher re-quoting a verse, or
+// multiple slides from the same passage) is instant. A shared keep-alive
+// HTTPS agent also avoids a fresh TCP+TLS handshake on every still-uncached
+// lookup, and a hard 6s timeout means a slow/unreachable upstream API fails
+// fast with a clear error instead of leaving the operator staring at
+// "Looking up…" with no feedback.
+const keepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
+const SCRIPTURE_REQUEST_TIMEOUT_MS = 6000;
+const scriptureCache = new Map(); // key: `${version}|${ref.toLowerCase()}` -> response JSON
+const SCRIPTURE_CACHE_MAX = 1000;
+
+function cachedScriptureGet(url, headers, cacheKey, res, parseBody) {
+  const req = https.get(url, { agent: keepAliveAgent, headers, timeout: SCRIPTURE_REQUEST_TIMEOUT_MS }, (apiRes) => {
+    let body = '';
+    apiRes.on('data', (chunk) => (body += chunk));
+    apiRes.on('end', () => {
+      let data;
+      try {
+        data = parseBody(body, apiRes);
+      } catch (e) {
+        return res.status(502).json({ error: 'Could not parse scripture response: ' + e.message });
+      }
+      if (data && !data.error) {
+        if (scriptureCache.size >= SCRIPTURE_CACHE_MAX) {
+          scriptureCache.delete(scriptureCache.keys().next().value); // drop oldest
+        }
+        scriptureCache.set(cacheKey, data);
+      }
+      const httpStatus = data && data.error ? (data.status || 404) : 200;
+      if (data && data.status) delete data.status; // internal-only, not part of the API contract
+      res.status(httpStatus).json(data);
+    });
+  });
+  req.on('timeout', () => {
+    req.destroy();
+    res.status(504).json({ error: 'Bible lookup timed out — the upstream service may be slow or your internet connection unstable. Try again.' });
+  });
+  req.on('error', (e) => res.status(502).json({ error: e.message }));
+}
 const API_BIBLE_IDS = {
   niv: '78a9f6124f344018-01',
   amp: 'a81b73293d3080c9-01',
@@ -737,33 +783,24 @@ function parseBibleReference(ref) {
   return { bookCode, chapter, verseStart, verseEnd };
 }
 
-function fetchHelloAoScripture(ref, version, res) {
+function fetchHelloAoScripture(ref, version, cacheKey, res) {
   const t = HELLOAO_TRANSLATIONS[version];
   const parsed = parseBibleReference(ref);
   if (!parsed) return res.status(400).json({ error: 'Could not understand reference "' + ref + '" — try a format like "John 3:16" or "John 3:16-18"' });
   const url = `https://bible.helloao.org/api/${t.id}/${parsed.bookCode}/${parsed.chapter}.json`;
-  https.get(url, (apiRes) => {
-    let body = '';
-    apiRes.on('data', (chunk) => (body += chunk));
-    apiRes.on('end', () => {
-      try {
-        const data = JSON.parse(body);
-        const content = (data.chapter && data.chapter.content) || [];
-        const verses = content.filter((item) => item.type === 'verse' && item.number >= parsed.verseStart && item.number <= parsed.verseEnd);
-        if (verses.length === 0) return res.status(404).json({ error: 'Reference not found: ' + ref });
-        const text = verses
-          .map((v) => v.content.map((c) => (typeof c === 'string' ? c : c.text || '')).join(' '))
-          .join(' ')
-          .replace(/¶\s*/g, '') // KJV paragraph markers — not part of the verse text
-          .replace(/\s+/g, ' ')
-          .trim();
-        res.json({ reference: ref, text, translation: t.name });
-      } catch (e) {
-        console.error('bible.helloao.org parse failure. status=' + apiRes.statusCode + ' body=' + body.slice(0, 300));
-        res.status(502).json({ error: 'Could not parse scripture response' });
-      }
-    });
-  }).on('error', (e) => res.status(502).json({ error: e.message }));
+  cachedScriptureGet(url, {}, cacheKey, res, (body) => {
+    const data = JSON.parse(body);
+    const content = (data.chapter && data.chapter.content) || [];
+    const verses = content.filter((item) => item.type === 'verse' && item.number >= parsed.verseStart && item.number <= parsed.verseEnd);
+    if (verses.length === 0) return { error: 'Reference not found: ' + ref, status: 404 };
+    const text = verses
+      .map((v) => v.content.map((c) => (typeof c === 'string' ? c : c.text || '')).join(' '))
+      .join(' ')
+      .replace(/¶\s*/g, '') // KJV paragraph markers — not part of the verse text
+      .replace(/\s+/g, ' ')
+      .trim();
+    return { reference: ref, text, translation: t.name };
+  });
 }
 
 app.get('/api/scripture', async (req, res) => {
@@ -771,14 +808,18 @@ app.get('/api/scripture', async (req, res) => {
   const version = (req.query.version || 'kjv').trim().toLowerCase();
   if (!ref) return res.status(400).json({ error: 'Missing ref' });
 
+  const cacheKey = version + '|' + ref.toLowerCase();
+  const cached = scriptureCache.get(cacheKey);
+  if (cached) return res.json(cached); // instant — no network round trip
+
   if (version === 'nlt') {
-    return fetchNltScripture(ref, res);
+    return fetchNltScripture(ref, cacheKey, res);
   }
   if (API_BIBLE_IDS[version]) {
-    return fetchApiBibleScripture(ref, version, res);
+    return fetchApiBibleScripture(ref, version, cacheKey, res);
   }
   if (HELLOAO_TRANSLATIONS[version]) {
-    return fetchHelloAoScripture(ref, version, res);
+    return fetchHelloAoScripture(ref, version, cacheKey, res);
   }
   return res.status(400).json({ error: 'Unknown Bible version: ' + version });
 });
@@ -786,60 +827,44 @@ app.get('/api/scripture', async (req, res) => {
 // API.Bible — used for NIV, AMP, MSG under the user's own free, registered
 // non-commercial/ministry API key.
 const API_BIBLE_NAMES = { niv: 'New International Version', amp: 'Amplified Bible', msg: 'The Message' };
-function fetchApiBibleScripture(ref, version, res) {
+function fetchApiBibleScripture(ref, version, cacheKey, res) {
   const key = process.env.API_BIBLE_KEY;
   if (!key) return res.status(400).json({ error: 'API_BIBLE_KEY not configured on the server' });
   const bibleId = API_BIBLE_IDS[version];
   const url = `https://api.scripture.api.bible/v1/bibles/${bibleId}/search?query=${encodeURIComponent(ref)}`;
-  https.get(url, { headers: { 'api-key': key } }, (apiRes) => {
-    let body = '';
-    apiRes.on('data', (chunk) => (body += chunk));
-    apiRes.on('end', () => {
-      try {
-        const data = JSON.parse(body);
-        const passage = data.data && data.data.passages && data.data.passages[0];
-        if (!passage) return res.status(404).json({ error: 'Reference not found' });
-        const text = passage.content
-          .replace(/<span[^>]*class="v"[^>]*>[\d-]+<\/span>/g, '') // strip inline verse-number markers (incl. ranges like "1-3")
-          .replace(/<[^>]+>/g, ' ') // strip remaining HTML tags
-          .replace(/\s+/g, ' ')
-          .replace(/\s+([,.;:!?])/g, '$1') // tidy stray space before punctuation left by stripped tags
-          .trim();
-        res.json({ reference: passage.reference, text, translation: API_BIBLE_NAMES[version] || version.toUpperCase() });
-      } catch (e) {
-        res.status(502).json({ error: 'Could not parse API.Bible response' });
-      }
-    });
-  }).on('error', (e) => res.status(502).json({ error: e.message }));
+  cachedScriptureGet(url, { 'api-key': key }, cacheKey, res, (body) => {
+    const data = JSON.parse(body);
+    const passage = data.data && data.data.passages && data.data.passages[0];
+    if (!passage) return { error: 'Reference not found', status: 404 };
+    const text = passage.content
+      .replace(/<span[^>]*class="v"[^>]*>[\d-]+<\/span>/g, '') // strip inline verse-number markers (incl. ranges like "1-3")
+      .replace(/<[^>]+>/g, ' ') // strip remaining HTML tags
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([,.;:!?])/g, '$1') // tidy stray space before punctuation left by stripped tags
+      .trim();
+    return { reference: passage.reference, text, translation: API_BIBLE_NAMES[version] || version.toUpperCase() };
+  });
 }
 
 // NLT.TO API — HTML response, parsed with cheerio. Free anonymous key "TEST"
 // works for light/sporadic lookups (50 verses/request, 500/day); set
 // NLT_API_KEY env var with your own free-registered key for higher limits.
-function fetchNltScripture(ref, res) {
+function fetchNltScripture(ref, cacheKey, res) {
   const key = process.env.NLT_API_KEY || 'TEST';
   const url = `https://api.nlt.to/api/passages?ref=${encodeURIComponent(ref)}&version=NLT&key=${encodeURIComponent(key)}`;
-  https.get(url, (apiRes) => {
-    let body = '';
-    apiRes.on('data', (chunk) => (body += chunk));
-    apiRes.on('end', () => {
-      try {
-        const $ = cheerio.load(body);
-        const header = $('.bk_ch_vs_header').first().text().trim(); // e.g. "John 3:16, NLT"
-        if (!header) return res.status(404).json({ error: 'Reference not found' });
-        const reference = header.replace(/,\s*NLT$/i, '');
-        // Strip the header, verse-number markers, and footnotes before
-        // extracting plain text (verse numbers would otherwise run into the
-        // next verse's text with no space on multi-verse ranges).
-        $('.bk_ch_vs_header, .tn, .a-tn, .vn').remove();
-        const text = $('#bibletext').text().trim().replace(/\s+/g, ' ');
-        if (!text) return res.status(404).json({ error: 'Reference not found' });
-        res.json({ reference, text, translation: 'New Living Translation' });
-      } catch (e) {
-        res.status(502).json({ error: 'Could not parse NLT response' });
-      }
-    });
-  }).on('error', (e) => res.status(502).json({ error: e.message }));
+  cachedScriptureGet(url, {}, cacheKey, res, (body) => {
+    const $ = cheerio.load(body);
+    const header = $('.bk_ch_vs_header').first().text().trim(); // e.g. "John 3:16, NLT"
+    if (!header) return { error: 'Reference not found', status: 404 };
+    const reference = header.replace(/,\s*NLT$/i, '');
+    // Strip the header, verse-number markers, and footnotes before
+    // extracting plain text (verse numbers would otherwise run into the
+    // next verse's text with no space on multi-verse ranges).
+    $('.bk_ch_vs_header, .tn, .a-tn, .vn').remove();
+    const text = $('#bibletext').text().trim().replace(/\s+/g, ' ');
+    if (!text) return { error: 'Reference not found', status: 404 };
+    return { reference, text, translation: 'New Living Translation' };
+  });
 }
 
 // List of Bible versions the app can look up. Free/public-domain ones work
