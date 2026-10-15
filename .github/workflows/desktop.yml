@@ -54,7 +54,27 @@ jobs:
           v=$(node -p "require('./package.json').version")
           if [ "refs/tags/v$v" != "$GITHUB_REF" ]; then echo "Tag $GITHUB_REF does not match package.json version $v"; exit 1; fi
 
+      - name: Prepare the GitHub release (create it first, repair a half-finished one)
+        if: env.PUBLISH == 'true'
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version"); tag="v$v"
+          # electron-builder uploads the installer, block-map and latest.yml in parallel; if the release does
+          # not exist yet they race to create it and some uploads are rejected. So the release is made here.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if gh release view "$tag" --json assets -q '.assets[].name' | grep -qx 'latest.yml'; then
+              echo "Release $tag is already complete - nothing to publish."; echo "SKIP_BUILD=true" >> "$GITHUB_ENV"; exit 0
+            fi
+            echo "Release $tag is incomplete (no latest.yml) - removing it so it can be rebuilt."
+            gh release delete "$tag" --cleanup-tag --yes
+          fi
+          gh release create "$tag" --target "$GITHUB_SHA" --latest --title "Worship Presenter $v" \
+            --notes "Windows desktop app: works with or without internet, syncs with your online copy, and updates itself. Download **Worship-Presenter-Setup-$v.exe** below and run it (Windows may show a blue 'protected your PC' box the first time: choose More info, then Run anyway). Full guide: docs/DESKTOP.md"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build installer${{ env.PUBLISH == 'true' && ' and publish release' || '' }}
+        if: env.SKIP_BUILD != 'true'
         shell: bash
         run: npx electron-builder --win --publish ${{ env.PUBLISH == 'true' && 'always' || 'never' }}
         env:
