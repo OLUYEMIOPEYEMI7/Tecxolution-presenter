@@ -8,11 +8,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,600;1,500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/css/presenter.css" />
+<link rel="stylesheet" href="/css/control.css" />
 </head>
 <body class="control-body">
   <div class="conn-banner" id="conn-banner">Connection lost — reconnecting. The projector keeps showing the last slide.</div>
   <div class="brand-strip"></div>
-  <div class="control-header">
+  <header class="control-header">
     <div class="header-brand">
       <img src="/images/brand/rccg-logo.png" alt="RCCG" class="header-logo" />
       <img src="/images/brand/yp9-logo.png" alt="YP9" class="header-logo" />
@@ -21,23 +22,40 @@
         <span class="header-subtitle">RCCG Youth Province 9 &middot; Peculiar Voices</span>
       </div>
     </div>
-    <div style="display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
-      <a class="header-link" href="/stage" target="_blank" rel="noopener" title="Confidence monitor for the worship team / speaker">Stage Monitor ⧉</a>
-      <a class="header-link" href="/remote" target="_blank" rel="noopener" title="Control from your phone">Phone Remote ⧉</a>
-      <a class="header-link" href="/api/backup" title="Download all songs, schedule, announcements">Backup ⬇</a>
-      <a class="header-link" onclick="document.getElementById('restore-file').click()" title="Merge a backup file back in">Restore ⬆</a>
-      <a class="header-link" onclick="signOut()">Sign out</a>
-      <input type="file" id="restore-file" accept="application/json,.json" style="display:none" />
-      <div class="live-indicator"><span class="live-dot" id="live-dot"></span><span id="live-text">connecting…</span></div>
-      <div class="output-bar" title="Hide the output without losing your place — B / L / C keys">
-        <button class="secondary" id="ov-black" onclick="toggleOverlay('black')">⬛ Black (B)</button>
-        <button class="secondary" id="ov-logo" onclick="toggleOverlay('logo')">Logo (L)</button>
-        <button class="secondary" id="ov-clear" onclick="toggleOverlay('clear')">Clear text (C)</button>
+    <button class="palette-trigger" id="palette-open" type="button" aria-label="Search songs, scripture and actions">
+      <span class="pt-icon" aria-hidden="true">⌕</span><span class="pt-text">Search songs, scripture, actions…</span><kbd>Ctrl K</kbd>
+    </button>
+    <div class="header-right">
+      <div class="live-indicator" title="Connection to the server"><span class="live-dot" id="live-dot"></span><span id="live-text">connecting…</span></div>
+      <div class="menu-wrap">
+        <button class="secondary icon-btn" id="menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More options">⋯</button>
+        <div class="menu" id="menu" role="menu">
+          <a role="menuitem" href="/stage" target="_blank" rel="noopener">Stage monitor ⧉</a>
+          <a role="menuitem" href="/remote" target="_blank" rel="noopener">Phone remote ⧉</a>
+          <a role="menuitem" href="/api/backup">Download backup ⬇</a>
+          <a role="menuitem" onclick="document.getElementById('restore-file').click()">Restore from backup ⬆</a>
+          <a role="menuitem" id="menu-shortcuts">Keyboard shortcuts <kbd>?</kbd></a>
+          <hr />
+          <a role="menuitem" onclick="signOut()">Sign out</a>
+        </div>
+        <input type="file" id="restore-file" accept="application/json,.json" style="display:none" />
       </div>
-      <div class="actions">
-        <button class="secondary" onclick="openDisplay()">Open Projection Screen ⧉</button>
-        <button class="danger" onclick="clearStage()">Clear all</button>
-      </div>
+      <button onclick="openDisplay()" title="Open the projector output on the second screen">Open Projector ⧉</button>
+    </div>
+  </header>
+
+  <div class="livebar" id="livebar" role="status" aria-live="polite">
+    <div class="livebar-status">
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span class="livebar-tag">LIVE</span>
+      <span class="livebar-title" id="lb-title">Nothing on screen</span>
+      <span class="livebar-elapsed" id="lb-elapsed"></span>
+    </div>
+    <div class="livebar-actions" role="group" aria-label="Output controls">
+      <button class="secondary" id="ov-black" onclick="toggleOverlay('black')" title="Black screen (B)">⬛ Black <kbd>B</kbd></button>
+      <button class="secondary" id="ov-logo" onclick="toggleOverlay('logo')" title="Logo screen (L)">Logo <kbd>L</kbd></button>
+      <button class="secondary" id="ov-clear" onclick="toggleOverlay('clear')" title="Hide text, keep background (C)">Clear text <kbd>C</kbd></button>
+      <button class="danger" onclick="clearStage()" title="Clear everything (Esc)">Clear all <kbd>Esc</kbd></button>
     </div>
   </div>
 
@@ -46,6 +64,7 @@
       <h2>Songs &amp; Hymns</h2>
       <div class="song-tabs" id="song-tabs">
         <button class="song-tab active" data-filter="all">All</button>
+        <button class="song-tab" data-filter="fav" title="Your starred songs">★</button>
         <button class="song-tab" data-filter="custom">My Songs</button>
         <button class="song-tab" data-filter="hymn">Classic Hymns</button>
         <button class="song-tab" data-filter="rccg">RCCG Hymnal</button>
@@ -59,16 +78,60 @@
     </div>
 
     <div class="panel panel-slides">
-      <h2>Slides <span style="font-size:10px; color:#666; font-weight:400; letter-spacing:0;">(click to stage in Preview)</span></h2>
+      <div class="tab-bar" role="tablist" aria-label="Workspace">
+        <button class="tab-btn active" role="tab" id="tabbtn-slides" data-tab="slides" aria-selected="true" aria-controls="tab-slides" type="button">Slides</button>
+        <button class="tab-btn" role="tab" id="tabbtn-schedule" data-tab="schedule" aria-selected="false" aria-controls="tab-schedule" type="button">Schedule<span class='tab-badge' id='sched-badge'></span></button>
+        <button class="tab-btn" role="tab" id="tabbtn-scripture" data-tab="scripture" aria-selected="false" aria-controls="tab-scripture" type="button">Scripture</button>
+        <button class="tab-btn" role="tab" id="tabbtn-media" data-tab="media" aria-selected="false" aria-controls="tab-media" type="button">Media</button>
+        <button class="tab-btn" role="tab" id="tabbtn-text" data-tab="text" aria-selected="false" aria-controls="tab-text" type="button">Text &amp; Ticker</button>
+        <button class="tab-btn" role="tab" id="tabbtn-tools" data-tab="tools" aria-selected="false" aria-controls="tab-tools" type="button">Tools</button>
+      </div>
+      <section class="tab-pane active" id="tab-slides" role="tabpanel" aria-labelledby="tabbtn-slides">
+<h2>Slides <span style="font-size:10px; color:#666; font-weight:400; letter-spacing:0;">(click to stage in Preview)</span></h2>
       <div id="slide-list"><p style="color:#666; font-size:13px;">Select a song to see its slides.</p></div>
-
-      <h2 style="margin-top:24px;">Today's Schedule</h2>
+      </section>
+      <section class="tab-pane" id="tab-schedule" role="tabpanel" aria-labelledby="tabbtn-schedule">
+<h2>Today's Schedule</h2>
       <div class="scripture-box">
         <div id="schedule-list" style="margin-bottom:8px;"><p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Schedule" on any slide/scripture to build your service order.</p></div>
         <button class="secondary" onclick="clearSchedule()" style="font-size:11px;">Clear Schedule</button>
       </div>
-
-      <h2 style="margin-top:24px;">🖼 Media (Images · Video · PowerPoint)</h2>
+      </section>
+      <section class="tab-pane" id="tab-scripture" role="tabpanel" aria-labelledby="tabbtn-scripture">
+<h2>Scripture</h2>
+      <div class="scripture-box">
+        <div style="position:relative;">
+          <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" autocomplete="off" />
+          <div id="book-suggestions" class="book-suggestions"></div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <div class="testament-dropdown-wrap">
+            <button type="button" class="secondary testament-pill" onclick="toggleTestamentDropdown('OT')">Old Testament ▾</button>
+            <div id="testament-dropdown-OT" class="testament-dropdown"></div>
+          </div>
+          <div class="testament-dropdown-wrap">
+            <button type="button" class="secondary testament-pill" onclick="toggleTestamentDropdown('NT')">New Testament ▾</button>
+            <div id="testament-dropdown-NT" class="testament-dropdown"></div>
+          </div>
+        </div>
+        <select id="bible-version-select" style="width:100%; margin-top:6px; padding:7px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px;"></select>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button onclick="stageScripture()" ondblclick="stageScripture(true)" title="Click to stage · double-click to go live instantly">Stage in Preview</button>
+          <button class="secondary" onclick="addScriptureToSchedule()">+ Schedule</button>
+          <button class="secondary" onclick="openBibleBrowser()" title="Click through Book → Chapter → Verse, no typing needed">📖 Browse</button>
+        </div>
+        <div class="quick-refs">
+          <button class="secondary" onclick="quickRef('John 3:16')" ondblclick="quickRef('John 3:16', true)" title="Click to stage · double-click to go live instantly">John 3:16</button>
+          <button class="secondary" onclick="quickRef('Genesis 1:1')" ondblclick="quickRef('Genesis 1:1', true)" title="Click to stage · double-click to go live instantly">Genesis 1:1</button>
+          <button class="secondary" onclick="quickRef('Psalm 23:1')" ondblclick="quickRef('Psalm 23:1', true)" title="Click to stage · double-click to go live instantly">Psalm 23:1</button>
+          <button class="secondary" onclick="quickRef('Romans 8:28')" ondblclick="quickRef('Romans 8:28', true)" title="Click to stage · double-click to go live instantly">Romans 8:28</button>
+          <button class="secondary" onclick="quickRef('Revelation 5:12')" ondblclick="quickRef('Revelation 5:12', true)" title="Click to stage · double-click to go live instantly">Revelation 5:12</button>
+        </div>
+        <p id="scripture-status" style="font-size:12px; color:#999; margin-top:6px;"></p>
+      </div>
+      </section>
+      <section class="tab-pane" id="tab-media" role="tabpanel" aria-labelledby="tabbtn-media">
+<h2>🖼 Media (Images · Video · PowerPoint)</h2>
       <div class="scripture-box">
         <p style="font-size:11px; color:#888; margin:0 0 8px;">
           Add images, video clips/links, or a PowerPoint deck — each slide of a
@@ -106,40 +169,9 @@
         <p id="media-status" style="font-size:12px; color:#999; margin-top:8px;"></p>
         <div id="media-library" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
       </div>
-
-      <h2 style="margin-top:24px;">Scripture</h2>
-      <div class="scripture-box">
-        <div style="position:relative;">
-          <input type="text" id="scripture-input" placeholder="e.g. Genesis 1:1 or John 3:16-18" autocomplete="off" />
-          <div id="book-suggestions" class="book-suggestions"></div>
-        </div>
-        <div style="display:flex; gap:8px; margin-top:8px;">
-          <div class="testament-dropdown-wrap">
-            <button type="button" class="secondary testament-pill" onclick="toggleTestamentDropdown('OT')">Old Testament ▾</button>
-            <div id="testament-dropdown-OT" class="testament-dropdown"></div>
-          </div>
-          <div class="testament-dropdown-wrap">
-            <button type="button" class="secondary testament-pill" onclick="toggleTestamentDropdown('NT')">New Testament ▾</button>
-            <div id="testament-dropdown-NT" class="testament-dropdown"></div>
-          </div>
-        </div>
-        <select id="bible-version-select" style="width:100%; margin-top:6px; padding:7px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px;"></select>
-        <div style="display:flex; gap:8px; margin-top:6px;">
-          <button onclick="stageScripture()" ondblclick="stageScripture(true)" title="Click to stage · double-click to go live instantly">Stage in Preview</button>
-          <button class="secondary" onclick="addScriptureToSchedule()">+ Schedule</button>
-          <button class="secondary" onclick="openBibleBrowser()" title="Click through Book → Chapter → Verse, no typing needed">📖 Browse</button>
-        </div>
-        <div class="quick-refs">
-          <button class="secondary" onclick="quickRef('John 3:16')" ondblclick="quickRef('John 3:16', true)" title="Click to stage · double-click to go live instantly">John 3:16</button>
-          <button class="secondary" onclick="quickRef('Genesis 1:1')" ondblclick="quickRef('Genesis 1:1', true)" title="Click to stage · double-click to go live instantly">Genesis 1:1</button>
-          <button class="secondary" onclick="quickRef('Psalm 23:1')" ondblclick="quickRef('Psalm 23:1', true)" title="Click to stage · double-click to go live instantly">Psalm 23:1</button>
-          <button class="secondary" onclick="quickRef('Romans 8:28')" ondblclick="quickRef('Romans 8:28', true)" title="Click to stage · double-click to go live instantly">Romans 8:28</button>
-          <button class="secondary" onclick="quickRef('Revelation 5:12')" ondblclick="quickRef('Revelation 5:12', true)" title="Click to stage · double-click to go live instantly">Revelation 5:12</button>
-        </div>
-        <p id="scripture-status" style="font-size:12px; color:#999; margin-top:6px;"></p>
-      </div>
-
-      <h2 style="margin-top:24px;">✍️ Free Text</h2>
+      </section>
+      <section class="tab-pane" id="tab-text" role="tabpanel" aria-labelledby="tabbtn-text">
+<h2>✍️ Free Text</h2>
       <div class="scripture-box">
         <p style="font-size:11px; color:#888; margin:0 0 8px;">
           Type anything and project it — a welcome message, a quick notice, "Please silence your phones" — no need to build a whole song or presentation first. Uses whatever theme is currently selected.
@@ -151,9 +183,7 @@
           <button class="secondary" onclick="saveFreeText()">+ Save</button>
         </div>
         <div id="free-texts-list" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;"></div>
-      </div>
-
-      <h2 style="margin-top:24px;">📢 Announcements / Ticker</h2>
+      </div><h2>📢 Announcements / Ticker</h2>
       <div class="scripture-box">
         <p style="font-size:11px; color:#888; margin:0 0 8px;">
           Type a notice, account number, or any message — it scrolls continuously along the bottom of the screen, under whatever is being projected.
@@ -165,8 +195,29 @@
         </div>
         <div id="announcements-list" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
       </div>
+      </section>
+      <section class="tab-pane" id="tab-tools" role="tabpanel" aria-labelledby="tabbtn-tools">
 
-      <h2 style="margin-top:24px;">⏱ Timer &amp; Alerts</h2>
+      <h2>🔠 Display &amp; Typography</h2>
+      <div class="scripture-box settings-grid">
+        <label>Text size <span id="font-scale-val" class="muted">100%</span>
+          <input type="range" id="font-scale" min="60" max="180" step="5" value="100" /></label>
+        <label>Line spacing <span id="line-spacing-val" class="muted">1.3</span>
+          <input type="range" id="line-spacing" min="100" max="180" step="2" value="132" /></label>
+        <label>Font
+          <select id="set-font"><option value="sans">Modern sans (Inter)</option><option value="serif">Classic serif (Fraunces)</option><option value="display">Bold display</option><option value="mono">Typewriter</option></select></label>
+        <label>Align
+          <select id="set-align"><option value="center">Centered</option><option value="left">Left</option></select></label>
+        <label>Position
+          <select id="set-position"><option value="middle">Middle of screen</option><option value="bottom">Lower third</option></select></label>
+        <label>Text shadow
+          <select id="set-shadow"><option value="0">None</option><option value="1" selected>Soft</option><option value="2">Strong outline</option></select></label>
+        <label class="check"><input type="checkbox" id="set-caps" /> ALL CAPS</label>
+        <label>Lines per slide <span class="muted">(songs)</span>
+          <select id="lines-per-slide"><option value="0">As written</option><option value="2">2 lines</option><option value="3">3 lines</option><option value="4">4 lines</option></select></label>
+      </div>
+      <p class="hint">Typography applies instantly to the projector. Long slides still shrink to fit automatically.</p>
+<h2>⏱ Timer &amp; Alerts</h2>
       <div class="scripture-box">
         <div class="mini-row" style="margin-top:0;">
           <input type="time" id="timer-at" class="mini-input" />
@@ -191,24 +242,10 @@
           <button onclick="showAlert()">Show alert</button>
           <button class="secondary" onclick="hideAlert()">Hide</button>
         </div>
-      </div>
-
-      <h2 style="margin-top:24px;">🕘 Recently Shown</h2>
+      </div><h2>🕘 Recently Shown</h2>
       <div class="scripture-box">
         <div id="history-list"><p style="color:#666; font-size:11px; margin:0;">Whatever you take live appears here for one-click re-use (click = stage · double-click = live).</p></div>
-      </div>
-
-      <h2 style="margin-top:24px;">🔠 Display</h2>
-      <div class="scripture-box">
-        <div class="mini-row" style="margin-top:0;">
-          <span style="font-size:12px;color:#ccc">Text size</span>
-          <input type="range" id="font-scale" min="60" max="180" step="5" value="100" style="flex:1" />
-          <span id="font-scale-val" style="font-size:12px;color:#ccc;width:42px;text-align:right">100%</span>
-        </div>
-        <p style="font-size:11px; color:#888; margin:6px 0 0;">Scales all lyric / scripture / text slides on the projector. Long slides still shrink to fit automatically.</p>
-      </div>
-
-      <h2 style="margin-top:24px;">🎙 Voice Detect (Beta)</h2>
+      </div><h2>🎙 Voice Detect (Beta)</h2>
       <div class="scripture-box">
         <div style="display:flex; gap:8px; margin-bottom:10px;">
           <button id="voice-start-btn" onclick="toggleVoiceDetect()">Start Listening</button>
@@ -229,6 +266,8 @@
         <div id="voice-transcript" style="font-size:11px; color:#666; max-height:80px; overflow-y:auto; background:#0b0b1a; border-radius:6px; padding:6px; margin-bottom:6px;"></div>
         <div id="voice-log" style="font-size:11px; color:#8a8aa0;"></div>
       </div>
+    
+      </section>
     </div>
 
     <div class="panel-preview">
@@ -249,6 +288,12 @@
               <div class="theme-swatch swatch-emerald" data-theme="emerald" title="Emerald"><span class="swatch-label">Emerald</span></div>
               <div class="theme-swatch swatch-midnight" data-theme="midnight" title="Midnight Blue"><span class="swatch-label">Midnight</span></div>
               <div class="theme-swatch swatch-sunset" data-theme="sunset" title="Sunset"><span class="swatch-label">Sunset</span></div>
+              <div class="theme-swatch swatch-ocean" data-theme="ocean" title="Ocean"><span class="swatch-label">Ocean</span></div>
+              <div class="theme-swatch swatch-forest" data-theme="forest" title="Forest"><span class="swatch-label">Forest</span></div>
+              <div class="theme-swatch swatch-rose" data-theme="rose" title="Rose"><span class="swatch-label">Rose</span></div>
+              <div class="theme-swatch swatch-slate" data-theme="slate" title="Slate"><span class="swatch-label">Slate</span></div>
+              <div class="theme-swatch swatch-dawn" data-theme="dawn" title="Dawn"><span class="swatch-label">Dawn</span></div>
+              <div class="theme-swatch swatch-glory" data-theme="glory" title="Glory"><span class="swatch-label">Glory</span></div>
               <div class="theme-swatch swatch-pure" data-theme="pure" title="Pure Light"><span class="swatch-label">Pure</span></div>
               <div class="theme-swatch swatch-blank" data-theme="blank" title="Blank (plain black)"><span class="swatch-label">Blank</span></div>
               <div id="custom-theme-swatches"></div>
@@ -384,11 +429,42 @@ He is worthy, worthy worthy
     </div>
   </div>
 
+
+  <!-- Command palette (Ctrl+K) -->
+  <div id="palette" class="modal-overlay palette-overlay" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="palette-box">
+      <input type="text" id="palette-input" placeholder="Type a song, hymn number, scripture (John 3:16), or an action…" autocomplete="off" spellcheck="false" aria-label="Search" />
+      <div id="palette-results" role="listbox"></div>
+      <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open / stage</span><span><kbd>Shift</kbd>+<kbd>Enter</kbd> go live</span><span><kbd>Esc</kbd> close</span></div>
+    </div>
+  </div>
+
+  <!-- Shortcuts -->
+  <div id="shortcuts" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header"><h2>Keyboard shortcuts</h2><span class="modal-close" onclick="closeShortcuts()" role="button" aria-label="Close">✕</span></div>
+      <div class="modal-body shortcuts-grid">
+        <div><kbd>←</kbd> <kbd>→</kbd><span>Previous / next slide (continues into the next schedule item)</span></div>
+        <div><kbd>1</kbd>–<kbd>9</kbd><span>Stage slide number</span></div>
+        <div><kbd>Enter</kbd> / <kbd>Space</kbd><span>Go live with the staged slide</span></div>
+        <div><kbd>B</kbd><span>Black screen (press again to restore)</span></div>
+        <div><kbd>L</kbd><span>Logo screen</span></div>
+        <div><kbd>C</kbd><span>Clear text, keep background</span></div>
+        <div><kbd>Esc</kbd><span>Clear everything</span></div>
+        <div><kbd>Ctrl</kbd>+<kbd>K</kbd> or <kbd>/</kbd><span>Search songs, scripture, actions</span></div>
+        <div><kbd>?</kbd><span>This help</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/bible-books.js"></script>
   <script src="/js/bible-structure.js"></script>
   <script src="/js/voice-detect.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/control.js"></script>
+  <script src="/js/control-ux.js"></script>
 </body>
 </html>

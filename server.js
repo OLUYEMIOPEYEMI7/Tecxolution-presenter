@@ -648,7 +648,7 @@ let previewState = { type: 'blank' };
 let tickerState = { active: false, text: '' };
 let overlayMode = 'none'; // none | black | logo | clear  (hides output without losing the live slide)
 let timerState = { active: false, mode: 'down', target: 0, label: '', onDisplay: false };
-let settingsState = { fontScale: 1 };
+let settingsState = sec.cleanSettings({});
 let alertState = { text: '', until: 0 };
 let history = []; // recently shown items, newest first
 let alertTimer = null;
@@ -725,10 +725,7 @@ function cleanTimer(t) {
     onDisplay: !!(t && t.onDisplay),
   };
 }
-function cleanSettings(s) {
-  const fs_ = Number(s && s.fontScale);
-  return { fontScale: Number.isFinite(fs_) ? Math.min(1.8, Math.max(0.6, fs_)) : 1 };
-}
+const cleanSettings = sec.cleanSettings;
 
 // ---------------------------------------------------------------------------
 // Public pages & auth
@@ -755,13 +752,14 @@ app.post('/api/login', (req, res) => {
       sec.AUTH_ENABLED ? { error: 'OPERATOR_PASSWORD is not set on the server.' } : { ok: true }
     );
   }
-  if (!sec.checkPassword(req.body && req.body.password)) {
+  const role = sec.checkPassword(req.body && req.body.password);
+  if (!role) {
     sec.recordLoginFailure(req.ip);
     return res.status(401).json({ error: 'Incorrect password.' });
   }
   sec.clearLoginFailures(req.ip);
-  sec.setSessionCookie(res);
-  res.json({ ok: true });
+  sec.setSessionCookie(res, role);
+  res.json({ ok: true, role });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -786,7 +784,7 @@ app.use(
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'display.html')));
 app.get('/stage', (req, res) => res.sendFile(path.join(__dirname, 'views', 'stage.html')));
 app.get('/control', sec.requireOperator, (req, res) => res.sendFile(path.join(__dirname, 'views', 'control.html')));
-app.get('/remote', sec.requireOperator, (req, res) => res.sendFile(path.join(__dirname, 'views', 'remote.html')));
+app.get('/remote', sec.requireAnyRole, (req, res) => res.sendFile(path.join(__dirname, 'views', 'remote.html')));
 app.get('/', (req, res) => res.redirect('/control'));
 
 // Only the assets the projector itself must fetch stay public.
@@ -794,6 +792,8 @@ const PUBLIC_API = [/^\/api\/login$/, /^\/api\/media\/file\/[A-Za-z0-9_-]+$/, /^
 app.use('/api', (req, res, next) => {
   const p = req.originalUrl.split('?')[0];
   if (PUBLIC_API.some((r) => r.test(p))) return next();
+  // Remote (volunteer) sign-ins may only READ the schedule, for the phone remote.
+  if (req.method === 'GET' && p === '/api/schedule') return sec.requireAnyRole(req, res, next);
   return sec.requireOperator(req, res, next);
 });
 
@@ -1439,7 +1439,8 @@ app.delete('/api/schedule', async (req, res) => {
 // payload validated, so a stranger who finds the URL can't take over the screen.
 // ---------------------------------------------------------------------------
 io.use((socket, next) => {
-  socket.data.operator = sec.isOperatorFromCookieHeader(socket.handshake.headers.cookie);
+  socket.data.role = sec.roleFromCookieHeader(socket.handshake.headers.cookie); // 'operator' | 'remote' | null
+  socket.data.operator = socket.data.role === 'operator';
   next();
 });
 
@@ -1454,17 +1455,21 @@ io.on('connection', (socket) => {
   socket.emit('timer-state', timerState);
   socket.emit('settings-state', settingsState);
   socket.emit('alert-state', alertState.until > Date.now() ? alertState : { text: '', until: 0 });
-  socket.emit('whoami', { operator: socket.data.operator });
-  if (socket.data.operator) socket.emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
+  socket.emit('whoami', { operator: socket.data.operator, role: socket.data.role });
+  if (socket.data.role) socket.emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
 
   socket.on('hello', (role) => {
-    if (socket.data.operator && (role === 'control' || role === 'remote')) socket.join(role === 'control' ? 'controllers' : 'remotes');
+    if (socket.data.operator && role === 'control') socket.join('controllers');
+    if (socket.data.role && role === 'remote') socket.join('remotes');
   });
   socket.on('time-sync', (ack) => { if (typeof ack === 'function') ack(Date.now()); });
 
   // Wrap every write handler: operator-only, and never let a bad payload throw.
-  const guard = (fn) => (...args) => {
-    if (!socket.data.operator) return socket.emit('auth-error', 'Sign in required');
+  // Volunteers (role "remote") get only the live-show verbs, never editing.
+  const REMOTE_OK = new Set(['stage', 'golive', 'clear', 'overlay', 'alert-show', 'remote-cmd']);
+  const guard = (fn, name) => (...args) => {
+    const allowed = socket.data.operator || (socket.data.role === 'remote' && REMOTE_OK.has(name));
+    if (!allowed) return socket.emit('auth-error', socket.data.role ? 'Not permitted for a remote sign-in' : 'Sign in required');
     try { fn(...args); } catch (e) { console.error('socket handler error:', e.message); }
   };
 
@@ -1475,7 +1480,7 @@ io.on('connection', (socket) => {
     previewState = st;
     io.emit('preview-state', previewState);
     persistState();
-  }));
+  }, 'stage'));
 
   // Promote whatever is currently staged in Preview to Live
   socket.on('golive', guard(() => {
@@ -1484,7 +1489,7 @@ io.on('connection', (socket) => {
     io.emit('live-state', liveState);
     io.to('controllers').to('remotes').emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
     persistState();
-  }));
+  }, 'golive'));
 
   // Direct-to-live, bypassing Preview entirely (used by Voice Detect auto-project)
   socket.on('project', guard((payload) => {
@@ -1495,7 +1500,7 @@ io.on('connection', (socket) => {
     io.emit('live-state', liveState);
     io.to('controllers').to('remotes').emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
     persistState();
-  }));
+  }, 'project'));
 
   socket.on('clear', guard(() => {
     liveState = { type: 'blank' };
@@ -1503,7 +1508,7 @@ io.on('connection', (socket) => {
     io.emit('live-state', liveState);
     io.emit('overlay-state', overlayMode);
     persistState();
-  }));
+  }, 'clear'));
 
   // Black / Logo / Clear-text — hides the output WITHOUT losing the live slide,
   // so a single key brings it straight back (core EasyWorship/ProPresenter behaviour).
@@ -1512,21 +1517,21 @@ io.on('connection', (socket) => {
     overlayMode = mode;
     io.emit('overlay-state', overlayMode);
     persistState();
-  }));
+  }, 'overlay'));
 
   // Scrolling ticker (lower-third banner) — independent of the main slide.
   socket.on('ticker-update', guard((payload) => {
     tickerState = { active: !!(payload && payload.active), text: sec.str(payload && payload.text, 600) };
     io.emit('ticker-state', tickerState);
     persistState();
-  }));
+  }, 'ticker-update'));
 
   // Service countdown / sermon timer (server-clock based so every screen agrees).
   socket.on('timer-set', guard((payload) => {
     timerState = cleanTimer(payload);
     io.emit('timer-state', timerState);
     persistState();
-  }));
+  }, 'timer-set'));
 
   // Temporary on-screen alert (nursery call, "please move your car", ...)
   socket.on('alert-show', guard((payload) => {
@@ -1543,13 +1548,13 @@ io.on('connection', (socket) => {
       }, seconds * 1000);
     }
     io.emit('alert-state', alertState);
-  }));
+  }, 'alert-show'));
 
   socket.on('settings-update', guard((payload) => {
     settingsState = cleanSettings({ ...settingsState, ...payload });
     io.emit('settings-state', settingsState);
     persistState();
-  }));
+  }, 'settings-update'));
 
   // Phone remote -> control room: the control room owns slide navigation, so
   // the remote simply asks it to act (next / prev / golive / black / schedule item ...).
@@ -1557,7 +1562,7 @@ io.on('connection', (socket) => {
     if (!cmd || typeof cmd !== 'object') return;
     const clean = { cmd: sec.str(cmd.cmd, 20), id: sec.str(cmd.id, 100), live: !!cmd.live };
     io.to('controllers').emit('remote-cmd', clean);
-  }));
+  }, 'remote-cmd'));
 });
 
 // ---------------------------------------------------------------------------

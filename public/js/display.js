@@ -232,7 +232,15 @@ socket.on('overlay-state', (mode) => {
 
 // Text size (set from the control room) — applied via a CSS variable.
 socket.on('settings-state', (s) => {
-  document.documentElement.style.setProperty('--font-scale', (s && s.fontScale) || 1);
+  s = s || {};
+  const root = document.documentElement;
+  root.style.setProperty('--font-scale', s.fontScale || 1);
+  root.style.setProperty('--line-spacing', s.lineSpacing || 1.32);
+  root.dataset.font = s.fontFamily || 'sans';
+  root.dataset.align = s.align || 'center';
+  root.dataset.caps = s.caps ? '1' : '0';
+  root.dataset.shadow = String(s.shadow == null ? 1 : s.shadow);
+  root.dataset.pos = s.position || 'middle';
   fitContent();
 });
 

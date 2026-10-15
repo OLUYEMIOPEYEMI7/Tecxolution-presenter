@@ -75,7 +75,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-ui); }
   color: #fff;
   text-shadow: 0 4px 22px rgba(0,0,0,0.92), 0 0 2px rgba(0,0,0,0.9);
   margin: 0.26em 0;
-  line-height: 1.32;
+  line-height: var(--line-spacing, 1.32);
 }
 .lyric-line .response {
   color: var(--gold-bright);
@@ -1068,3 +1068,23 @@ button.danger:hover { background: var(--danger); box-shadow: 0 4px 14px rgba(239
 .rm-sched-item:last-child { border-bottom: 0; }
 .rm-sched-item button { font-size: 12px; padding: 8px 12px; border-radius: 8px; border: 1px solid #33335a; background: #17172b; color: #f4ead2; font-family: inherit; }
 .rm-sched-item button.live { background: #d4a63a; color: #1a1405; border-color: #d4a63a; font-weight: 700; }
+
+
+/* ============== Typography settings (set from the control room) ============== */
+:root { --text-font: var(--font-ui); --line-spacing: 1.32; }
+html[data-font="serif"] { --text-font: var(--font-display); }
+html[data-font="display"] { --text-font: 'Arial Black', 'Helvetica Neue', Inter, sans-serif; }
+html[data-font="mono"] { --text-font: 'Courier New', ui-monospace, monospace; }
+.stage-content { font-family: var(--text-font); }
+.scripture-text, .free-text-body { line-height: var(--line-spacing, 1.4); }
+html[data-align="left"] .stage-content { text-align: left; }
+html[data-caps="1"] .stage-content { text-transform: uppercase; }
+html[data-shadow="0"] .lyric-line, html[data-shadow="0"] .scripture-text, html[data-shadow="0"] .free-text-body, html[data-shadow="0"] .finale-banner { text-shadow: none; }
+html[data-shadow="2"] .lyric-line, html[data-shadow="2"] .scripture-text, html[data-shadow="2"] .free-text-body, html[data-shadow="2"] .finale-banner {
+  text-shadow: 0 0 2px #000, 0 0 6px #000, 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+}
+html[data-pos="bottom"] .stage { align-items: flex-end; }
+html[data-pos="bottom"] .stage-content { padding-bottom: 9vh; }
+html[data-pos="bottom"] .stage.song .stage-overlay, html[data-pos="bottom"] .stage.scripture .stage-overlay, html[data-pos="bottom"] .stage.free-text .stage-overlay {
+  background: linear-gradient(to bottom, rgba(0,0,0,0) 35%, rgba(0,0,0,0.85) 100%);
+}

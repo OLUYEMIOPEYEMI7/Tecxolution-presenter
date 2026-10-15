@@ -19,7 +19,7 @@ function start(env = {}) {
   return new Promise((resolve, reject) => {
     proc = spawn('node', ['server.js'], {
       cwd: path.join(__dirname, '..'),
-      env: { ...process.env, PORT: String(PORT), DATA_DIR, OPERATOR_PASSWORD: PASSWORD, NODE_ENV: 'test', DATABASE_URL: '', ...env },
+      env: { ...process.env, PORT: String(PORT), DATA_DIR, OPERATOR_PASSWORD: PASSWORD, REMOTE_PASSWORD: 'volunteer-pass', NODE_ENV: 'test', DATABASE_URL: '', ...env },
     });
     proc.stdout.on('data', (d) => { if (String(d).includes('running at')) resolve(); });
     proc.stderr.on('data', (d) => process.env.TEST_VERBOSE && process.stderr.write(d));
@@ -73,6 +73,44 @@ test('login: wrong password rejected, right password sets HttpOnly cookie', asyn
   cookie = sc.split(';')[0];
   assert.strictEqual((await api('/control')).status, 200);
   assert.strictEqual((await api('/api/songs')).status, 200);
+});
+
+test('volunteer (remote) sign-in can drive the show but never edit', async () => {
+  const saved = cookie;
+  const r = await api('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'volunteer-pass' }) });
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual((await r.json()).role, 'remote');
+  cookie = r.headers.get('set-cookie').split(';')[0];
+  const remoteCookie = cookie;
+  // pages: remote page yes, control room redirects to the remote
+  assert.strictEqual((await api('/remote')).status, 200);
+  const c = await api('/control');
+  assert.strictEqual(c.status, 302);
+  assert.strictEqual(c.headers.get('location'), '/remote');
+  // API: may read the schedule, nothing else
+  assert.strictEqual((await api('/api/schedule')).status, 200);
+  assert.strictEqual((await api('/api/songs')).status, 403);
+  assert.strictEqual((await api('/api/backup')).status, 403);
+  assert.strictEqual((await api('/api/songs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 403);
+  assert.strictEqual((await api('/api/schedule', { method: 'DELETE' })).status, 403);
+  // sockets: live-show verbs only
+  const viewer = await connect(false);
+  const vol = await connect(true);
+  await wait(200);
+  const seen = {};
+  ['overlay-state', 'live-state', 'ticker-state', 'settings-state'].forEach((e) => viewer.on(e, (v) => { seen[e] = v; }));
+  vol.emit('overlay', 'black');
+  vol.emit('project', { type: 'free-text', text: 'NOPE' });
+  vol.emit('ticker-update', { active: true, text: 'NOPE' });
+  vol.emit('settings-update', { fontScale: 1.5 });
+  await wait(400);
+  assert.strictEqual(seen['overlay-state'], 'black');
+  assert.strictEqual(seen['live-state'], undefined);
+  assert.strictEqual(seen['ticker-state'], undefined);
+  assert.strictEqual(seen['settings-state'], undefined);
+  vol.emit('overlay', 'none');
+  [viewer, vol].forEach((x) => x.close());
+  cookie = saved;
 });
 
 test('forged / tampered session cookie is rejected', async () => {
@@ -146,6 +184,32 @@ test('overlay, timer, alert and settings reach viewers', async () => {
   assert.strictEqual(got['overlay-state'], 'black'); // invalid mode ignored
   op.emit('overlay', 'none');
   [viewer, op].forEach((s) => s.close());
+});
+
+test('typography settings are validated and clamped', async () => {
+  const viewer = await connect(false);
+  const op = await connect(true);
+  await wait(200);
+  let got;
+  viewer.on('settings-state', (v) => { got = v; });
+  op.emit('settings-update', { fontFamily: 'comic-sans;}body{display:none', align: 'right', caps: 1, shadow: 9, position: 'top', lineSpacing: 50, fontScale: 0.01 });
+  await wait(300);
+  assert.strictEqual(got.fontFamily, 'sans');
+  assert.strictEqual(got.align, 'center');
+  assert.strictEqual(got.shadow, 1);
+  assert.strictEqual(got.position, 'middle');
+  assert.strictEqual(got.lineSpacing, 1.8);
+  assert.strictEqual(got.fontScale, 0.6);
+  op.emit('settings-update', { fontFamily: 'serif', align: 'left', caps: true, shadow: 2, position: 'bottom', lineSpacing: 1.5, fontScale: 1 });
+  await wait(300);
+  assert.deepStrictEqual([got.fontFamily, got.align, got.caps, got.shadow, got.position], ['serif', 'left', true, 2, 'bottom']);
+  op.emit('settings-update', { fontFamily: 'sans', align: 'center', caps: false, shadow: 1, position: 'middle', lineSpacing: 1.32 });
+  [viewer, op].forEach((x) => x.close());
+});
+
+test('authenticated pages are never cached', async () => {
+  assert.strictEqual((await api('/control')).headers.get('cache-control'), 'no-store');
+  assert.strictEqual((await api('/api/songs')).headers.get('cache-control'), 'no-store');
 });
 
 test('songs: validation + CRUD + search', async () => {

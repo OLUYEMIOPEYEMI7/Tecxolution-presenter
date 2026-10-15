@@ -38,7 +38,7 @@
     try {
       const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password: document.getElementById('pw').value }) });
       const d = await r.json().catch(() => ({}));
-      if (r.ok) { location.href = next; return; }
+      if (r.ok) { location.href = (d.role === 'remote' && !next.startsWith('/remote')) ? '/remote' : next; return; }
       err.textContent = d.error || 'Could not sign in.';
     } catch (x) { err.textContent = 'Network problem — check your connection and try again.'; }
     btn.disabled = false;
