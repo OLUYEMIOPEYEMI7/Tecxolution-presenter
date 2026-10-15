@@ -26,6 +26,7 @@
       <span class="pt-icon" aria-hidden="true">⌕</span><span class="pt-text">Search songs, scripture, actions…</span><kbd>Ctrl K</kbd>
     </button>
     <div class="header-right">
+      <button class="net-chip" id="net-chip" type="button" hidden></button>
       <div class="live-indicator" title="Connection to the server"><span class="live-dot" id="live-dot"></span><span id="live-text">connecting…</span></div>
       <div class="menu-wrap">
         <button class="secondary icon-btn" id="menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More options">⋯</button>
@@ -522,6 +523,8 @@ Chorus
     </div>
   </div>
 
+  <div id="update-banner" class="update-banner" hidden role="status"></div>
+
   <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -532,5 +535,6 @@ Chorus
   <script src="/js/control.js"></script>
   <script src="/js/control-ux.js"></script>
   <script src="/js/scripture-nav.js"></script>
+  <script src="/js/desktop-ui.js"></script>
 </body>
 </html>

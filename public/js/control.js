@@ -851,6 +851,12 @@ function clearStage() {
 }
 
 async function openDisplay() {
+  // Desktop app: the shell puts the projector on the second screen itself.
+  if (window.desktop) {
+    const r = await window.desktop.openProjector();
+    if (window.toast) window.toast(r.already ? 'Projector is already open.' : r.onSecondScreen ? 'Projector opened on the second screen.' : 'Only one screen found — projector opened in a window. Connect the projector, then press F5 to move it.', 'ok');
+    return;
+  }
   // Modern Chrome/Edge: ask which monitors are connected, then open the
   // projection screen positioned exactly on the non-primary one and
   // full-screened automatically — no manual dragging needed. Race against

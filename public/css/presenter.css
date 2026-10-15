@@ -1088,3 +1088,6 @@ html[data-pos="bottom"] .stage-content { padding-bottom: 9vh; }
 html[data-pos="bottom"] .stage.song .stage-overlay, html[data-pos="bottom"] .stage.scripture .stage-overlay, html[data-pos="bottom"] .stage.free-text .stage-overlay {
   background: linear-gradient(to bottom, rgba(0,0,0,0) 35%, rgba(0,0,0,0.85) 100%);
 }
+
+/* Desktop projector window: nobody should see a mouse pointer on the screen */
+html.desktop-projector, html.desktop-projector * { cursor: none !important; }

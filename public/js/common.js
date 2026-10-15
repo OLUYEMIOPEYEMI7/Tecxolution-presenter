@@ -5,7 +5,7 @@
 //  - server-clock sync (timers must agree across every screen)
 //  - screen wake-lock for projector / monitor machines
 (function () {
-  if ('serviceWorker' in navigator && window.isSecureContext) {
+  if (!window.desktop && 'serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
 
