@@ -17,6 +17,7 @@ projector in real time (WebSocket-synced).
 | Variable | Required | Notes |
 |---|---|---|
 | `OPERATOR_PASSWORD` | **yes (production)** | Operator sign-in. With `NODE_ENV=production` and no password the control room is locked (fails closed). |
+| `REMOTE_PASSWORD` | optional | Second password for volunteers: opens the phone remote only (next/prev, go live, black/logo/clear, alerts). Cannot edit, upload, delete or open the control room. |
 | `SESSION_SECRET` | optional | Signs login cookies. Defaults to a key derived from the password (changing the password signs everyone out). |
 | `DATABASE_URL` | recommended | Supabase/Postgres. Without it data lives in local files and is wiped on every redeploy. |
 | `API_BIBLE_KEY` / `NLT_API_KEY` | optional | NIV/AMP/MSG via API.Bible; higher NLT limits. |
@@ -31,8 +32,16 @@ npm test        # end-to-end tests (auth, socket gating, validation, uploads, pe
 ```
 
 ## Operator shortcuts
-`←` `→` previous/next slide · `Enter`/`Space` go live · `Esc` clear all ·
-`B` black · `L` logo · `C` clear text (press again to restore the same slide).
+`Ctrl+K` or `/` search everything (songs, hymn numbers, lyrics, scripture like `john 3:16`, schedule, actions) ·
+`←` `→` previous/next slide (continues into the next schedule item) · `1`–`9` stage slide N ·
+`Enter`/`Space` go live · `B` black · `L` logo · `C` clear text (press again to restore the same slide) ·
+`Esc` clear all · `?` shortcut help. `Shift+Enter` in search goes straight live.
+
+## Control room
+Tabbed workspace (Slides · Schedule · Scripture · Media · Text & Ticker · Tools), a persistent **LIVE bar**
+(what is on screen, for how long, with Black/Logo/Clear), slide **thumbnails** with the live slide highlighted,
+drag-to-reorder schedule with auto-advance, favourites, instant search, lines-per-slide, and projector
+typography (font, size, spacing, alignment, caps, shadow, lower-third). Responsive down to phone width.
 
 ## Security model
 - Operator session = signed, HttpOnly, SameSite=Lax cookie; login is rate-limited.

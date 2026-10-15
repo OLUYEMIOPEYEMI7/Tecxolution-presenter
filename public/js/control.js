@@ -13,6 +13,36 @@ let songSourceFilter = 'all';
 let songSearchDebounce = null;
 const MAX_RENDERED_SONGS = 150;
 
+// Favourites (starred songs) live in this browser; allSongsIndex is the full
+// lightweight catalogue, used for instant as-you-type title/number matching
+// while the server does the slower lyric search.
+let favs = new Set(JSON.parse(localStorage.getItem('wp_favs') || '[]'));
+let allSongsIndex = [];
+function toggleFav(id) {
+  if (favs.has(id)) favs.delete(id); else favs.add(id);
+  localStorage.setItem('wp_favs', JSON.stringify([...favs]));
+  if (songSourceFilter === 'fav') reloadSongs(); else renderSongList();
+}
+function linesPerSlide() { return Number(localStorage.getItem('wp_lines_per_slide') || 0); }
+// Re-splits long verses so projected slides stay readable (e.g. max 2 lines).
+function rechunkSections(sections, n) {
+  if (!n) return sections;
+  const out = [];
+  sections.forEach((sec) => {
+    if (sec.pairs.length <= n) { out.push(sec); return; }
+    const parts = Math.ceil(sec.pairs.length / n);
+    for (let i = 0; i < parts; i++) {
+      out.push({
+        ...sec,
+        label: `${sec.label} (${i + 1}/${parts})`,
+        pairs: sec.pairs.slice(i * n, (i + 1) * n),
+        finale: i === parts - 1 ? sec.finale : null,
+      });
+    }
+  });
+  return out;
+}
+
 const liveDot = document.getElementById('live-dot');
 const liveText = document.getElementById('live-text');
 
@@ -38,13 +68,15 @@ function signOut() {
 function reloadSongs() {
   const params = new URLSearchParams();
   if (songSearchTerm) params.set('q', songSearchTerm);
-  if (songSourceFilter !== 'all') params.set('source', songSourceFilter);
+  if (songSourceFilter !== 'all' && songSourceFilter !== 'fav') params.set('source', songSourceFilter);
   const footer = document.getElementById('song-list-footer');
   if (songSearchTerm) footer.textContent = 'Searching…';
   return fetch('/api/songs?' + params.toString())
     .then((r) => r.json())
     .then((data) => {
       songs = data.songs;
+      if (!songSearchTerm && songSourceFilter === 'all') allSongsIndex = songs;
+      if (songSourceFilter === 'fav') songs = songs.filter((x) => favs.has(x.id));
       renderSongList();
     });
 }
@@ -52,6 +84,17 @@ reloadSongs();
 
 document.getElementById('song-search').addEventListener('input', (e) => {
   const value = e.target.value;
+  // Instant: match titles / artists / hymn numbers locally before the server's lyric search returns.
+  const words = value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (words.length && allSongsIndex.length) {
+    songs = allSongsIndex.filter((x) => {
+      if (songSourceFilter === 'fav' && !favs.has(x.id)) return false;
+      if (songSourceFilter !== 'all' && songSourceFilter !== 'fav' && x.source !== songSourceFilter) return false;
+      const hay = (x.title + ' ' + (x.artist || '') + ' ' + (x.hymnNumber || '')).toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
+    renderSongList();
+  }
   clearTimeout(songSearchDebounce);
   songSearchDebounce = setTimeout(() => {
     songSearchTerm = value.toLowerCase().trim();
@@ -91,13 +134,16 @@ function renderSongList() {
       ? `<span onclick="event.stopPropagation(); openEditSongModal('${song.id}')" style="float:right; color:#999; font-size:12px; cursor:pointer; margin-right:8px;" title="Edit title, artist, or lyrics">✎</span>`
       : '';
     const schedBtn = `<span onclick="event.stopPropagation(); addWholeSongToSchedule('${song.id}')" class="song-sched-btn" title="Add this whole song to Today's Schedule">+ Sched</span>`;
-    div.innerHTML = `<div class="song-title">${escapeHtmlLocal(song.title)}${badge}${editBtn}${delBtn}</div><div class="song-artist">${escapeHtmlLocal(song.artist || '')}${schedBtn}</div>`;
+    const star = `<span class="fav-star ${favs.has(song.id) ? 'on' : ''}" onclick="event.stopPropagation(); toggleFav('${song.id}')" title="${favs.has(song.id) ? 'Remove from favourites' : 'Add to favourites'}" role="button" aria-label="Toggle favourite">${favs.has(song.id) ? '★' : '☆'}</span>`;
+    div.innerHTML = `<div class="song-title">${escapeHtmlLocal(song.title)}${badge}${star}${editBtn}${delBtn}</div><div class="song-artist">${escapeHtmlLocal(song.artist || '')}${schedBtn}</div>`;
     div.onclick = () => selectSong(song);
     container.appendChild(div);
   });
 
   if (total === 0) {
-    container.innerHTML = '<p style="color:#666; font-size:13px;">No matches. Try a different keyword or tab.</p>';
+    container.innerHTML = songSourceFilter === 'fav'
+      ? '<p style="color:#666; font-size:13px;">No favourites yet — tap the ☆ on any song to pin it here.</p>'
+      : '<p style="color:#666; font-size:13px;">No matches. Try a different keyword or tab.</p>';
     footer.textContent = '';
   } else if (total > MAX_RENDERED_SONGS) {
     footer.textContent = `Showing ${MAX_RENDERED_SONGS} of ${total} — keep typing to narrow it down.`;
@@ -127,6 +173,7 @@ function selectSong(song) {
         container.innerHTML = '<p style="color:#a3303c; font-size:13px;">Could not load this song.</p>';
         return;
       }
+      full.sections = rechunkSections(full.sections, linesPerSlide());
       activeSong = full;
       currentSongSections = full.sections;
       scriptureChunks = [];
@@ -137,12 +184,15 @@ function selectSong(song) {
       container.innerHTML = '';
       full.sections.forEach((section, idx) => {
         const div = document.createElement('div');
-        div.className = 'slide-item';
-        const previewText = section.pairs.map((p) => p[0]).join(' ').slice(0, 70);
+        div.className = 'slide-item slide-card';
+        div.dataset.title = `${full.title} — ${section.label}`;
+        const thumbLines = section.pairs.slice(0, 5).map((p) => escapeHtmlLocal(p[0]) + (p[1] ? ' <em>' + escapeHtmlLocal(p[1]) + '</em>' : '')).join('<br>');
         div.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div style="flex:1;"><div class="slide-label">${escapeHtmlLocal(section.label)}</div><div class="slide-preview">${escapeHtmlLocal(previewText)}…</div></div>
-            <span onclick="event.stopPropagation(); addSongSlideToSchedule('${full.id}', ${idx})" style="font-size:10px; color:#888; border:1px solid #444; border-radius:4px; padding:2px 6px; margin-left:8px; white-space:nowrap;">+ Sched</span>
+          <div class="thumb"><div class="thumb-text">${thumbLines}</div></div>
+          <div class="card-meta">
+            <span class="card-num">${idx + 1}</span>
+            <span class="slide-label">${escapeHtmlLocal(section.label)}</span>
+            <span class="sched-add" onclick="event.stopPropagation(); addSongSlideToSchedule('${full.id}', ${idx})" title="Add this slide to today's schedule">+ Sched</span>
           </div>`;
         div.onclick = () => {
           currentSectionIndex = idx;
@@ -158,6 +208,7 @@ function selectSong(song) {
         div.title = 'Click to stage · double-click to go live instantly';
         container.appendChild(div);
       });
+      if (window.showTab) window.showTab('slides');
     })
     .catch(() => {
       container.innerHTML = '<p style="color:#a3303c; font-size:13px;">Error loading song.</p>';
@@ -1134,13 +1185,16 @@ function loadDeckIntoSlidePanel(deckId, thenGoLive) {
       container.innerHTML = '';
       data.slides.forEach((slide, idx) => {
         const div = document.createElement('div');
-        div.className = 'slide-item';
-        div.innerHTML = `<div class="slide-label">Slide ${idx + 1} of ${data.slides.length}</div>`;
+        div.className = 'slide-item slide-card';
+        div.dataset.title = 'Slide ' + (idx + 1);
+        div.innerHTML = `<div class="thumb"><img loading="lazy" alt=""></div><div class="card-meta"><span class="card-num">${idx + 1}</span><span class="slide-label">Slide ${idx + 1} of ${data.slides.length}</span></div>`;
+        div.querySelector('img').src = slide.url;
         div.onclick = () => { currentDeckIndex = idx; highlightDeckSlide(); stageState({ type: 'image', url: slide.url }); };
         div.ondblclick = () => { currentDeckIndex = idx; highlightDeckSlide(); stageState({ type: 'image', url: slide.url }); goLive(); };
         div.title = 'Click to stage · double-click to go live instantly';
         container.appendChild(div);
       });
+      if (window.showTab) window.showTab('slides');
       highlightDeckSlide();
       stageState({ type: 'image', url: data.slides[0].url });
       if (thenGoLive) goLive();
