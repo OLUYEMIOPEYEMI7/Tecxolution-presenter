@@ -66,9 +66,13 @@ Use **⋯ ▸ Download backup** any time for a single-file copy.
 ## For whoever publishes updates
 Updates are published from GitHub — no server of yours is involved.
 1. Change `"version"` in `package.json` (e.g. `1.0.1`) and merge to `main`.
-2. Create the tag: `git tag v1.0.1 && git push origin v1.0.1`.
-3. The **Desktop app** workflow runs the tests, builds the Windows installer and creates a **GitHub Release**
-   containing `Worship-Presenter-Setup-1.0.1.exe` and `latest.yml`. Installed apps pick it up within hours.
+2. On GitHub: **Actions ▸ Desktop app ▸ Run workflow ▸ branch `main`, tick "publish" ▸ Run** (or push a `v1.0.1` tag).
+3. The workflow runs the tests, builds the Windows installer and creates the **GitHub Release** `v1.0.1` containing
+   `Worship-Presenter-Setup-1.0.1.exe` and `latest.yml`. Installed apps pick it up within hours.
+
+Keep the newest GitHub release the app's own: the updater reads the repository's *latest* release, so a later release of
+something else (for example the old "Offline Edition" zip) would make installed apps look for updates in the wrong place.
+Mark such releases as *pre-release* so they never count as "latest".
 
 Every push to a `ccr-*` branch runs the tests and builds the installer **without publishing** (download it from the
 workflow run's *Artifacts*).

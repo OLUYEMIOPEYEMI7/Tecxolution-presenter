@@ -1,13 +1,22 @@
 name: Desktop app
 
 # - every push to a feature branch: run all tests and build the Windows installer (not published)
-# - pushing a tag like v1.0.1: the same, then PUBLISH a GitHub Release — installed copies of
-#   the app find it and update themselves.
+# - pushing a tag like v1.0.1, OR running this workflow on `main` with "publish" ticked: the same,
+#   then PUBLISH a GitHub Release (electron-builder creates the v<version> tag and release) —
+#   installed copies of the app find it and update themselves.
 on:
   push:
     branches: ['ccr-*']
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a GitHub Release for the version in package.json (only works on main)'
+        type: boolean
+        default: false
+
+env:
+  PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main') }}
 
 permissions:
   contents: write   # needed to create the release
@@ -45,15 +54,15 @@ jobs:
           v=$(node -p "require('./package.json').version")
           if [ "refs/tags/v$v" != "$GITHUB_REF" ]; then echo "Tag $GITHUB_REF does not match package.json version $v"; exit 1; fi
 
-      - name: Build installer${{ startsWith(github.ref, 'refs/tags/v') && ' and publish release' || '' }}
+      - name: Build installer${{ env.PUBLISH == 'true' && ' and publish release' || '' }}
         shell: bash
-        run: npx electron-builder --win --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        run: npx electron-builder --win --publish ${{ env.PUBLISH == 'true' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned build (no code-signing certificate yet)
 
       - name: Keep the installer from branch builds for download
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ env.PUBLISH != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: Worship-Presenter-Setup
