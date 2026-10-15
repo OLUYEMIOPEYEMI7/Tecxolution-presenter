@@ -18,6 +18,16 @@ const MAX_RENDERED_SONGS = 150;
 // while the server does the slower lyric search.
 let favs = new Set(JSON.parse(localStorage.getItem('wp_favs') || '[]'));
 let allSongsIndex = [];
+let needsLyrics = 0;
+const HL_STOP = new Set(['my','the','a','an','is','of','to','in','on','for','and','that','this','with','at','by','from','as','it','be','we','you','your','he','his','him','she','her','they','them','our','us','i','am','are','was','were','will','shall','thy','thee','thou','o']);
+// Escapes text and wraps the searched words in <mark> (escape per piece, so a
+// query like "amp" can never corrupt an HTML entity).
+function highlightTerms(text, term) {
+  const words = [...new Set(String(term || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 2 && !HL_STOP.has(w)))];
+  if (!words.length) return escapeHtmlLocal(text);
+  const re = new RegExp('(' + words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi');
+  return String(text).split(re).map((part, i) => (i % 2 ? '<mark>' + escapeHtmlLocal(part) + '</mark>' : escapeHtmlLocal(part))).join('');
+}
 function toggleFav(id) {
   if (favs.has(id)) favs.delete(id); else favs.add(id);
   localStorage.setItem('wp_favs', JSON.stringify([...favs]));
@@ -75,6 +85,7 @@ function reloadSongs() {
     .then((r) => r.json())
     .then((data) => {
       songs = data.songs;
+      needsLyrics = data.needsLyrics || 0;
       if (!songSearchTerm && songSourceFilter === 'all') allSongsIndex = songs;
       if (songSourceFilter === 'fav') songs = songs.filter((x) => favs.has(x.id));
       renderSongList();
@@ -135,7 +146,11 @@ function renderSongList() {
       : '';
     const schedBtn = `<span onclick="event.stopPropagation(); addWholeSongToSchedule('${song.id}')" class="song-sched-btn" title="Add this whole song to Today's Schedule">+ Sched</span>`;
     const star = `<span class="fav-star ${favs.has(song.id) ? 'on' : ''}" onclick="event.stopPropagation(); toggleFav('${song.id}')" title="${favs.has(song.id) ? 'Remove from favourites' : 'Add to favourites'}" role="button" aria-label="Toggle favourite">${favs.has(song.id) ? '★' : '☆'}</span>`;
-    div.innerHTML = `<div class="song-title">${escapeHtmlLocal(song.title)}${badge}${star}${editBtn}${delBtn}</div><div class="song-artist">${escapeHtmlLocal(song.artist || '')}${schedBtn}</div>`;
+    const noLyr = song.hasLyrics === false ? '<span class="song-badge nolyrics" title="Title only — add the lyrics so it can be projected and searched">NO LYRICS</span>' : '';
+    const snippet = song.snippet && songSearchTerm
+      ? `<div class="song-snippet" title="Matching line in the lyrics">${song.snippet.label ? '<b>' + escapeHtmlLocal(song.snippet.label) + '</b> ' : ''}${highlightTerms(song.snippet.text, songSearchTerm)}</div>`
+      : '';
+    div.innerHTML = `<div class="song-title">${highlightTerms(song.title, songSearchTerm)}${badge}${noLyr}${star}${editBtn}${delBtn}</div><div class="song-artist">${highlightTerms(song.artist || '', songSearchTerm)}${schedBtn}</div>${snippet}`;
     div.onclick = () => selectSong(song);
     container.appendChild(div);
   });
@@ -143,13 +158,26 @@ function renderSongList() {
   if (total === 0) {
     container.innerHTML = songSourceFilter === 'fav'
       ? '<p style="color:#666; font-size:13px;">No favourites yet — tap the ☆ on any song to pin it here.</p>'
-      : '<p style="color:#666; font-size:13px;">No matches. Try a different keyword or tab.</p>';
+      : songSourceFilter === 'nolyrics'
+        ? '<p style="color:#6fcf97; font-size:13px;">Every song has lyrics. 🎉</p>'
+        : '<p style="color:#666; font-size:13px;">No matches. Try another word — you can search titles, artists, hymn numbers and any words from the lyrics.</p>';
     footer.textContent = '';
   } else if (total > MAX_RENDERED_SONGS) {
     footer.textContent = `Showing ${MAX_RENDERED_SONGS} of ${total} — keep typing to narrow it down.`;
   } else {
     footer.textContent = `${total} song${total === 1 ? '' : 's'}`;
   }
+  if (songSourceFilter === 'nolyrics') {
+    footer.innerHTML += ' · <a href="#" onclick="showSongsNeedingLyrics(false); return false;">back to all songs</a>';
+  } else if (needsLyrics > 0) {
+    footer.innerHTML += ` · <a href="#" onclick="showSongsNeedingLyrics(true); return false;" title="Songs imported as titles only">${needsLyrics} need lyrics</a>`;
+  }
+}
+
+function showSongsNeedingLyrics(on) {
+  songSourceFilter = on ? 'nolyrics' : 'all';
+  document.querySelectorAll('.song-tab').forEach((t) => t.classList.toggle('active', !on && t.dataset.filter === 'all'));
+  reloadSongs();
 }
 
 function deleteSong(id) {
@@ -171,6 +199,21 @@ function selectSong(song) {
     .then((full) => {
       if (full.error) {
         container.innerHTML = '<p style="color:#a3303c; font-size:13px;">Could not load this song.</p>';
+        return;
+      }
+      if (!full.sections || full.sections.length === 0) {
+        activeSong = full;
+        currentSongSections = [];
+        scriptureChunks = [];
+        currentSectionIndex = -1;
+        currentDeckSlides = [];
+        container.innerHTML = `<div class="slides-empty"><div style="font-size:15px; color:var(--text); margin-bottom:6px;">${escapeHtmlLocal(full.title)}</div>
+          This song has no lyrics yet, so there is nothing to project or search.<br>
+          <div style="margin-top:14px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+            <button onclick="openEditSongModal('${full.id}')">+ Add lyrics</button>
+            <button class="secondary" onclick="openImportModal()">Import lyrics…</button>
+          </div></div>`;
+        if (window.showTab) window.showTab('slides');
         return;
       }
       full.sections = rechunkSections(full.sections, linesPerSlide());
@@ -499,7 +542,7 @@ function stageScriptureChunk() {
     text: c.text,
     translation: scriptureChunkTranslation,
     background: null,
-    next: nextC ? [nextC.reference, nextC.text.slice(0, 140) + (nextC.text.length > 140 ? '…' : '')] : [],
+    next: nextC ? [nextC.reference, nextC.text.slice(0, 140) + (nextC.text.length > 140 ? '…' : '')] : (window.scriptureNextHint || []),
     label: scriptureChunks.length > 1 ? `Part ${scriptureChunkIndex + 1} of ${scriptureChunks.length}` : '',
   });
 }
@@ -512,7 +555,9 @@ function stageScriptureResult(ref, data, thenGoLive) {
   scriptureChunkIndex = 0;
   scriptureChunkTranslation = data.translation;
   stageScriptureChunk();
+  window.scriptureNextHint = [];
   if (thenGoLive) goLive();
+  if (window.scrNavFromResult) window.scrNavFromResult(data);
   return scriptureChunks.length;
 }
 
@@ -1220,6 +1265,7 @@ function projectScriptureByRef(ref) {
         return false;
       }
       statusEl.textContent = 'Projected: ' + data.reference;
+      if (window.scrNavFromResult) window.scrNavFromResult(data);
       socket.emit('project', withTheme({
         type: 'scripture',
         reference: data.reference,
@@ -1632,3 +1678,70 @@ document.getElementById('restore-file').addEventListener('change', (e) => {
       });
   });
 });
+
+
+// ================= Import lyrics (paste or upload text files) =================
+function openImportModal() {
+  document.getElementById('import-modal').classList.add('open');
+  document.getElementById('import-results').innerHTML = '';
+  updateImportPreview();
+}
+function closeImportModal() { document.getElementById('import-modal').classList.remove('open'); }
+
+// "### Title | Artist" starts each song; everything until the next ### is its lyrics.
+function parseImportText(raw) {
+  const songs = [];
+  String(raw || '').replace(/\r/g, '').split(/^###[ \t]*/m).slice(1).forEach((block) => {
+    const nl = block.indexOf('\n');
+    const head = (nl < 0 ? block : block.slice(0, nl)).trim();
+    const lyrics = nl < 0 ? '' : block.slice(nl + 1).trim();
+    const [title, ...rest] = head.split('|');
+    if (title && title.trim()) songs.push({ title: title.trim(), artist: rest.join('|').trim(), lyrics });
+  });
+  return songs;
+}
+function updateImportPreview() {
+  const songs = parseImportText(document.getElementById('import-text').value);
+  const withLyrics = songs.filter((x) => x.lyrics.length > 0).length;
+  document.getElementById('import-preview').textContent = songs.length
+    ? `${songs.length} song${songs.length === 1 ? '' : 's'} found (${withLyrics} with lyrics).`
+    : 'Nothing to import yet — paste lyrics below or choose .txt files.';
+}
+document.getElementById('import-text').addEventListener('input', updateImportPreview);
+
+// Each chosen .txt file becomes one song; "Artist - Title.txt" names are split.
+document.getElementById('import-files').addEventListener('change', async (e) => {
+  const box = document.getElementById('import-text');
+  for (const file of [...e.target.files]) {
+    const text = await file.text();
+    if (/^\s*###/.test(text)) { box.value += (box.value ? '\n\n' : '') + text.trim(); continue; }
+    const base = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim();
+    const m = base.match(/^(.+?)\s+-\s+(.+)$/);
+    const title = m ? m[2] : base;
+    const artist = m ? m[1] : '';
+    box.value += (box.value ? '\n\n' : '') + `### ${title}${artist ? ' | ' + artist : ''}\n${text.trim()}`;
+  }
+  e.target.value = '';
+  updateImportPreview();
+});
+
+function submitImport() {
+  const songs = parseImportText(document.getElementById('import-text').value).filter((x) => x.lyrics);
+  if (!songs.length) { alert('Nothing to import yet — each song needs a "### Title | Artist" line followed by its lyrics.'); return; }
+  const btn = document.getElementById('import-go');
+  btn.disabled = true; btn.textContent = 'Importing…';
+  fetch('/api/songs/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ songs }) })
+    .then((r) => r.json())
+    .then((d) => {
+      if (d.error) { alert('Import failed: ' + d.error); return; }
+      document.getElementById('import-results').innerHTML =
+        `<div style="margin:10px 0; font-weight:700; color:var(--text);">${d.created} added · ${d.updated} filled in · ${d.skipped} skipped</div>` +
+        d.results.map((r) => `<div class="import-row ${r.result}"><span>${escapeHtmlLocal(r.title)}</span><span>${r.result}${r.reason ? ' — ' + escapeHtmlLocal(r.reason) : ''}</span></div>`).join('');
+      if (d.created + d.updated) document.getElementById('import-text').value = '';
+      updateImportPreview();
+      reloadSongs();
+      if (window.toast) window.toast(`Imported: ${d.created} added, ${d.updated} filled in`, 'ok');
+    })
+    .catch((e) => alert('Import failed: ' + e.message))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Import'; });
+}

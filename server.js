@@ -10,6 +10,7 @@ const { Pool } = require('pg');
 const cheerio = require('cheerio');
 const sec = require('./lib/security');
 const storage = require('./lib/storage');
+const lyricsLib = require('./lib/lyrics');
 
 const app = express();
 app.set('trust proxy', 1); // Render terminates TLS in front of us — needed for real client IPs
@@ -618,17 +619,12 @@ async function saveThemeImage(buffer, mimetype, originalname) {
 let songCache = null;
 async function buildSongCache() {
   const customRows = await loadCustomSongs();
-  const custom = customRows.map((s) => ({ ...s, source: 'custom' }));
+  const custom = customRows.map((x) => ({ ...x, source: 'custom' }));
   const hymns = loadHymns().hymns.map((h) => ({ ...h, source: 'hymn' }));
   const rccg = loadRccgHymnal().hymns.map((h) => ({ ...h, source: 'rccg' }));
-  const all = [...custom, ...hymns, ...rccg];
-  songCache = all.map((s) => {
-    const lyricText = s.sections.map((sec) => sec.pairs.map((p) => p.join(' ')).join(' ')).join(' ');
-    const rawText = [s.title, s.artist, s.hymnNumber, lyricText].filter(Boolean).join(' ').toLowerCase();
-    // Strip punctuation so "blessings, name" still matches a query typed as "blessings name"
-    const searchText = rawText.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ');
-    return { ...s, _searchText: searchText };
-  });
+  // Index once per rebuild (not per keystroke): normalised title/artist/lyrics,
+  // lyric lines for snippets, and whether the song really has lyrics.
+  songCache = [...custom, ...hymns, ...rccg].map((x) => ({ ...x, ...lyricsLib.indexSong(x) }));
   return songCache;
 }
 
@@ -799,48 +795,31 @@ app.use('/api', (req, res, next) => {
 
 app.get('/api/songs', async (req, res) => {
   try {
-  // Lightweight metadata only — full lyrics are fetched on demand via /api/songs/:id
-  // so the browser doesn't have to download the entire ~3MB hymnal up front.
-  // ?q= searches title, artist, hymn number AND full lyric text (keyword search).
-  // ?source= filters to custom|hymn|rccg.
-  let all = await getAllSongsFull();
-  const q = (req.query.q || '').trim().toLowerCase();
-  const source = req.query.source || 'all';
+    // Lightweight metadata only — full lyrics are fetched on demand via /api/songs/:id.
+    // ?q= searches title, artist, hymn number AND lyric text, best matches first,
+    // each with the lyric line that matched.  ?source= custom|hymn|rccg|nolyrics.
+    let all = await getAllSongsFull();
+    const q = String(req.query.q || '').trim().slice(0, 200);
+    const source = String(req.query.source || 'all');
+    if (source === 'nolyrics') all = all.filter((x) => !x.hasLyrics);
+    else if (source !== 'all') all = all.filter((x) => x.source === source);
 
-  if (source !== 'all') all = all.filter((s) => s.source === source);
-  if (q) {
-    // Match every typed word somewhere in the song's text — forgiving of
-    // word order, punctuation, and misremembered phrasing. Common stopwords
-    // are ignored for scoring since they're too common to be discriminating.
-    const STOPWORDS = new Set(['my','the','a','an','is','of','to','in','on','for','and','that','this','with','at','by','from','as','it','be','we','you','your','he','his','him','she','her','they','them','our','us','i','am','are','was','were','will','shall','thy','thee','thou','o']);
-    const allWords = q.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-    const words = allWords.filter((w) => !STOPWORDS.has(w));
-    const effectiveWords = words.length > 0 ? words : allWords; // if query is only stopwords, use them anyway
-
-    let matched = all.filter((s) => effectiveWords.every((w) => s._searchText.includes(w)));
-    if (matched.length === 0 && effectiveWords.length > 1) {
-      // Nothing matched every word (e.g. one word misremembered) — fall back
-      // to songs matching a clear majority of the words, ranked best-first.
-      const threshold = Math.max(2, Math.ceil(effectiveWords.length * 0.6));
-      matched = all
-        .map((s) => ({ s, score: effectiveWords.filter((w) => s._searchText.includes(w)).length }))
-        .filter((x) => x.score >= threshold)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 20)
-        .map((x) => x.s);
-    }
-    all = matched;
-  }
-
-  const light = all.map((s) => ({
-    id: s.id,
-    title: s.title,
-    artist: s.artist || '',
-    source: s.source,
-    hymnNumber: s.hymnNumber || null,
-    sectionCount: s.sections.length,
-  }));
-  res.json({ songs: light });
+    const results = lyricsLib.searchSongs(all, q);
+    const needsLyrics = (await getAllSongsFull()).filter((x) => !x.hasLyrics).length;
+    res.json({
+      needsLyrics,
+      songs: results.map(({ song: x, matchedIn, snippet }) => ({
+        id: x.id,
+        title: x.title,
+        artist: x.artist || '',
+        source: x.source,
+        hymnNumber: x.hymnNumber || null,
+        sectionCount: x.realSectionCount,
+        hasLyrics: x.hasLyrics,
+        matchedIn: q ? matchedIn : undefined,
+        snippet: q && snippet ? snippet : undefined,
+      })),
+    });
   } catch (e) {
     console.error('Error in /api/songs:', e.message);
     res.status(500).json({ error: 'Could not load songs', songs: [] });
@@ -850,9 +829,13 @@ app.get('/api/songs', async (req, res) => {
 app.get('/api/songs/:id', async (req, res) => {
   try {
     const all = await getAllSongsFull();
-    const song = all.find((s) => s.id === req.params.id);
+    const song = all.find((x) => x.id === req.params.id);
     if (!song) return res.status(404).json({ error: 'Song not found' });
-    res.json(song);
+    // Strip search-index fields; a title-only stub returns NO sections so the
+    // editor starts blank (instead of loading the placeholder note as lyrics).
+    const { _t, _a, _l, _lines, _all, realSectionCount, ...clean } = song;
+    if (!song.hasLyrics) clean.sections = [];
+    res.json(clean);
   } catch (e) {
     console.error('Error in /api/songs/:id:', e.message);
     res.status(500).json({ error: 'Could not load song' });
@@ -908,6 +891,45 @@ app.put('/api/songs/:id', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not update song: ' + e.message });
+  }
+});
+
+// Bulk lyric import: paste or upload lyrics from a source the church is
+// licensed to use (CCLI SongSelect, a hymnal, sheet music). Lyrics for an
+// existing title-only song fill that song in; new titles are created; songs that
+// already have lyrics are never overwritten.
+app.post('/api/songs/import', async (req, res) => {
+  const items = Array.isArray(req.body && req.body.songs) ? req.body.songs.slice(0, 300) : [];
+  if (!items.length) return res.status(400).json({ error: 'No songs to import' });
+  const results = [];
+  try {
+    const existing = (await loadCustomSongs()).map((x) => ({ ...x, ...lyricsLib.indexSong(x) }));
+    for (const it of items) {
+      const title = sec.str(it && it.title, 200).trim();
+      const artist = sec.str(it && it.artist, 200).trim();
+      const sections = sec.sanitizeSections(lyricsLib.parseLyrics(sec.str(it && it.lyrics, 30000)));
+      if (!title) { results.push({ title: '(untitled)', result: 'skipped', reason: 'no title' }); continue; }
+      if (!sections) { results.push({ title, result: 'skipped', reason: 'no lyrics found' }); continue; }
+      const key = lyricsLib.normalizeTitle(title);
+      const match = existing.find((x) => lyricsLib.normalizeTitle(x.title) === key);
+      if (match && match.hasLyrics) { results.push({ title, result: 'skipped', reason: 'already has lyrics' }); continue; }
+      if (match) {
+        await updateCustomSong(match.id, { title: match.title, artist: artist || match.artist || '', sections });
+        match.hasLyrics = true;
+        results.push({ title: match.title, result: 'updated' });
+      } else {
+        const song = { id: slugify(title), title, artist, sections };
+        await addCustomSong(song);
+        existing.push({ ...song, ...lyricsLib.indexSong(song) });
+        results.push({ title, result: 'created' });
+      }
+    }
+    songCache = null;
+    const count = (r) => results.filter((x) => x.result === r).length;
+    res.json({ created: count('created'), updated: count('updated'), skipped: count('skipped'), results });
+  } catch (e) {
+    songCache = null;
+    res.status(500).json({ error: 'Import failed: ' + e.message, results });
   }
 });
 
@@ -984,54 +1006,7 @@ const HELLOAO_TRANSLATIONS = {
   ylt: { id: 'eng_ylt', name: "Young's Literal Translation" },
 };
 
-// Standard USFM/USX 3-letter book codes, in Bible order — bible.helloao.org
-// uses these directly as path segments (GEN, EXO, ... JHN, ... REV).
-const BIBLE_BOOK_CODES = {
-  genesis: 'GEN', exodus: 'EXO', leviticus: 'LEV', numbers: 'NUM', deuteronomy: 'DEU',
-  joshua: 'JOS', judges: 'JDG', ruth: 'RUT', '1samuel': '1SA', '2samuel': '2SA',
-  '1kings': '1KI', '2kings': '2KI', '1chronicles': '1CH', '2chronicles': '2CH',
-  ezra: 'EZR', nehemiah: 'NEH', esther: 'EST', job: 'JOB', psalm: 'PSA', psalms: 'PSA',
-  proverbs: 'PRO', ecclesiastes: 'ECC', songofsolomon: 'SNG', song: 'SNG', isaiah: 'ISA',
-  jeremiah: 'JER', lamentations: 'LAM', ezekiel: 'EZK', daniel: 'DAN', hosea: 'HOS',
-  joel: 'JOL', amos: 'AMO', obadiah: 'OBA', jonah: 'JON', micah: 'MIC', nahum: 'NAM',
-  habakkuk: 'HAB', zephaniah: 'ZEP', haggai: 'HAG', zechariah: 'ZEC', malachi: 'MAL',
-  matthew: 'MAT', mark: 'MRK', luke: 'LUK', john: 'JHN', acts: 'ACT', romans: 'ROM',
-  '1corinthians': '1CO', '2corinthians': '2CO', galatians: 'GAL', ephesians: 'EPH',
-  philippians: 'PHP', colossians: 'COL', '1thessalonians': '1TH', '2thessalonians': '2TH',
-  '1timothy': '1TI', '2timothy': '2TI', titus: 'TIT', philemon: 'PHM', hebrews: 'HEB',
-  james: 'JAS', '1peter': '1PE', '2peter': '2PE', '1john': '1JN', '2john': '2JN',
-  '3john': '3JN', jude: 'JUD', revelation: 'REV',
-};
-
-// Common abbreviations operators actually type ("Jn 3:16", "1 Cor 13:4", "Rom 8:28").
-const BIBLE_BOOK_ALIASES = {
-  gen: 'GEN', ge: 'GEN', exod: 'EXO', ex: 'EXO', lev: 'LEV', num: 'NUM', deut: 'DEU', dt: 'DEU',
-  josh: 'JOS', judg: 'JDG', jdg: 'JDG', '1sam': '1SA', '2sam': '2SA', '1kgs': '1KI', '2kgs': '2KI',
-  '1chr': '1CH', '2chr': '2CH', neh: 'NEH', est: 'EST', ps: 'PSA', psa: 'PSA', pslm: 'PSA', prov: 'PRO',
-  pr: 'PRO', eccl: 'ECC', eccles: 'ECC', ecc: 'ECC', songofsongs: 'SNG', sos: 'SNG', isa: 'ISA', jer: 'JER',
-  lam: 'LAM', ezek: 'EZK', eze: 'EZK', dan: 'DAN', hos: 'HOS', obad: 'OBA', mic: 'MIC', nah: 'NAM',
-  hab: 'HAB', zeph: 'ZEP', hag: 'HAG', zech: 'ZEC', mal: 'MAL', matt: 'MAT', mt: 'MAT', mk: 'MRK',
-  mar: 'MRK', lk: 'LUK', luk: 'LUK', jn: 'JHN', joh: 'JHN', act: 'ACT', rom: 'ROM', ro: 'ROM',
-  '1cor': '1CO', '2cor': '2CO', gal: 'GAL', eph: 'EPH', phil: 'PHP', php: 'PHP', col: 'COL',
-  '1thess': '1TH', '2thess': '2TH', '1thes': '1TH', '2thes': '2TH', '1tim': '1TI', '2tim': '2TI', tit: 'TIT',
-  phlm: 'PHM', heb: 'HEB', jas: 'JAS', jam: 'JAS', '1pet': '1PE', '2pet': '2PE', '1jn': '1JN', '2jn': '2JN',
-  '3jn': '3JN', rev: 'REV', rv: 'REV',
-};
-
-// Parses "John 3:16", "1 John 3:16-18", "Song of Solomon 2:1", "Psalm 23" (whole
-// chapter) etc. into {bookCode, chapter, verseStart, verseEnd}. Null if unparseable.
-function parseBibleReference(ref) {
-  const m = ref.trim().match(/^((?:[1-3]\s*)?[A-Za-z][A-Za-z\s.]*?)\.?\s+(\d+)(?:\s*:\s*(\d+)(?:\s*-\s*(\d+))?)?$/);
-  if (!m) return null;
-  const bookKey = m[1].toLowerCase().replace(/[\s.]+/g, '');
-  const bookCode = BIBLE_BOOK_CODES[bookKey] || BIBLE_BOOK_ALIASES[bookKey];
-  if (!bookCode) return null;
-  const chapter = parseInt(m[2], 10);
-  const verseStart = m[3] ? parseInt(m[3], 10) : 1;
-  const verseEnd = m[3] ? (m[4] ? parseInt(m[4], 10) : verseStart) : 999;
-  if (chapter < 1 || chapter > 150 || verseEnd < verseStart) return null;
-  return { bookCode, chapter, verseStart, verseEnd };
-}
+const { BIBLE_BOOK_CODES, BIBLE_BOOK_ALIASES, parseBibleReference, scriptureMeta, canonicalReference } = require('./lib/bible');
 
 function fetchHelloAoScripture(ref, version, cacheKey, res) {
   const t = HELLOAO_TRANSLATIONS[version];
@@ -1058,6 +1033,15 @@ app.get('/api/scripture', async (req, res) => {
   const ref = (req.query.ref || '').trim();
   const version = (req.query.version || 'kjv').trim().toLowerCase();
   if (!ref || ref.length > 80) return res.status(400).json({ error: 'Missing or invalid ref' });
+
+  // Every successful response also carries canonical book/chapter/verse info so
+  // the control room can offer next/previous verse and chapter navigation.
+  const meta = scriptureMeta(ref);
+  if (meta) {
+    const send = res.json.bind(res);
+    // Always show the proper book name on screen ("jn 3:16" -> "John 3:16").
+    res.json = (data) => send(data && !data.error ? { ...data, ...meta, reference: canonicalReference(meta) } : data);
+  }
 
   const cacheKey = version + '|' + ref.toLowerCase();
   const cached = scriptureCache.get(cacheKey);

@@ -32,6 +32,7 @@
         <div class="menu" id="menu" role="menu">
           <a role="menuitem" href="/stage" target="_blank" rel="noopener">Stage monitor ⧉</a>
           <a role="menuitem" href="/remote" target="_blank" rel="noopener">Phone remote ⧉</a>
+          <a role="menuitem" onclick="openImportModal()">Import lyrics…</a>
           <a role="menuitem" href="/api/backup">Download backup ⬇</a>
           <a role="menuitem" onclick="document.getElementById('restore-file').click()">Restore from backup ⬆</a>
           <a role="menuitem" id="menu-shortcuts">Keyboard shortcuts <kbd>?</kbd></a>
@@ -70,9 +71,14 @@
         <button class="song-tab" data-filter="rccg">RCCG Hymnal</button>
       </div>
       <input type="text" id="song-search" placeholder="Search by title or hymn number…" class="search-input" />
-      <button class="add-song-btn" onclick="openAddSongModal()">
-        <span class="add-song-icon">+</span> Add Your Own Song
-      </button>
+      <div class="add-song-row">
+        <button class="add-song-btn" onclick="openAddSongModal()">
+          <span class="add-song-icon">+</span> Add Your Own Song
+        </button>
+        <button class="add-song-btn" onclick="openImportModal()" title="Paste or upload lyrics for many songs at once">
+          <span class="add-song-icon">⇪</span> Import lyrics
+        </button>
+      </div>
       <div id="song-list"></div>
       <div id="song-list-footer" class="song-list-footer"></div>
     </div>
@@ -129,6 +135,16 @@
         </div>
         <p id="scripture-status" style="font-size:12px; color:#999; margin-top:6px;"></p>
       </div>
+      
+        <div class="scripture-box" id="chapter-view" style="display:none;">
+          <div class="cv-head">
+            <button class="secondary" data-cvchap="-1" title="Previous chapter" aria-label="Previous chapter">◀</button>
+            <strong id="cv-title">Chapter</strong>
+            <button class="secondary" data-cvchap="1" title="Next chapter" aria-label="Next chapter">▶</button>
+          </div>
+          <div id="cv-list" class="cv-list"></div>
+          <p class="hint" style="margin:8px 0 0;">Click a verse to stage it · double-click for live · Shift+click for a range · <kbd>[</kbd> <kbd>]</kbd> previous / next verse · <kbd>{</kbd> <kbd>}</kbd> chapter</p>
+        </div>
       </section>
       <section class="tab-pane" id="tab-media" role="tabpanel" aria-labelledby="tabbtn-media">
 <h2>🖼 Media (Images · Video · PowerPoint)</h2>
@@ -333,6 +349,14 @@
           <button class="secondary" onclick="prevSlide()" title="Previous slide (←)">⬅</button>
           <button class="secondary" onclick="nextSlide()" title="Next slide (→)">➡</button>
         </div>
+        <div class="verse-bar" id="verse-bar" style="display:none;" role="group" aria-label="Scripture navigation">
+          <button class="secondary" data-vnav="chapter:-1" title="Previous chapter ({)" aria-label="Previous chapter">⏮</button>
+          <button class="secondary" data-vnav="verse:-1" title="Previous verse ([)">◀ Verse</button>
+          <span class="verse-bar-ref" id="verse-bar-ref">—</span>
+          <button class="secondary" data-vnav="verse:1" title="Next verse (])">Verse ▶</button>
+          <button class="secondary" data-vnav="chapter:1" title="Next chapter (})" aria-label="Next chapter">⏭</button>
+          <label class="check" title="Take each verse live as soon as you pick it"><input type="checkbox" id="verse-autolive" /> Live as I click</label>
+        </div>
       </div>
       <div class="preview-section">
         <h2 style="margin:2px 16px 0;">Live <span style="font-size:10px; color:#666; font-weight:400;">(audience sees this)</span></h2>
@@ -430,6 +454,37 @@ He is worthy, worthy worthy
   </div>
 
 
+
+  <!-- Import lyrics -->
+  <div id="import-modal" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px;">
+      <div class="modal-header"><h2>Import lyrics</h2><span class="modal-close" onclick="closeImportModal()" role="button" aria-label="Close">✕</span></div>
+      <div class="modal-body">
+        <p class="form-hint">Paste lyrics from a source your church is licensed to use (CCLI SongSelect, a hymnal, sheet music). Start each song with a line like
+          <code>### Song Title | Artist</code>, then its lyrics — <strong>a blank line starts a new slide</strong>; a line such as <em>Chorus</em> labels it.
+          Songs that are currently title-only are filled in; songs that already have lyrics are never overwritten.</p>
+        <pre class="import-example">### Baruch Hashem Adonai | Dunsin Oyekan
+Verse 1
+…your lyrics…
+
+Chorus
+…your lyrics…
+
+### Another Song | Artist
+…</pre>
+        <div class="form-row"><label>Or choose .txt files <span class="label-optional">(one song per file; “Artist - Title.txt” names are understood)</span></label>
+          <input type="file" id="import-files" accept=".txt,text/plain" multiple style="font-size:12px;color:#999;" /></div>
+        <textarea id="import-text" class="form-textarea" rows="12" placeholder="### Title | Artist&#10;lyrics…"></textarea>
+        <div id="import-preview" class="form-hint" style="margin-top:8px;"></div>
+        <div id="import-results" class="import-results"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="secondary" onclick="closeImportModal()">Close</button>
+        <button id="import-go" onclick="submitImport()">Import</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Command palette (Ctrl+K) -->
   <div id="palette" class="modal-overlay palette-overlay" role="dialog" aria-modal="true" aria-label="Command palette">
     <div class="palette-box">
@@ -446,6 +501,8 @@ He is worthy, worthy worthy
       <div class="modal-body shortcuts-grid">
         <div><kbd>←</kbd> <kbd>→</kbd><span>Previous / next slide (continues into the next schedule item)</span></div>
         <div><kbd>1</kbd>–<kbd>9</kbd><span>Stage slide number</span></div>
+        <div><kbd>[</kbd> <kbd>]</kbd><span>Previous / next scripture verse</span></div>
+        <div><kbd>{</kbd> <kbd>}</kbd><span>Previous / next scripture chapter</span></div>
         <div><kbd>Enter</kbd> / <kbd>Space</kbd><span>Go live with the staged slide</span></div>
         <div><kbd>B</kbd><span>Black screen (press again to restore)</span></div>
         <div><kbd>L</kbd><span>Logo screen</span></div>
@@ -466,5 +523,6 @@ He is worthy, worthy worthy
   <script src="/js/common.js"></script>
   <script src="/js/control.js"></script>
   <script src="/js/control-ux.js"></script>
+  <script src="/js/scripture-nav.js"></script>
 </body>
 </html>
