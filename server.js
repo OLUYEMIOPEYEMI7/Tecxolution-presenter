@@ -13,6 +13,8 @@ const storage = require('./lib/storage');
 const lyricsLib = require('./lib/lyrics');
 const offlineBible = require('./lib/bible-offline');
 
+const APP_VERSION = require('./package.json').version;
+
 const app = express();
 app.set('trust proxy', 1); // Render terminates TLS in front of us — needed for real client IPs
 app.disable('x-powered-by');
@@ -114,6 +116,7 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT now()
     );
     ALTER TABLE wp_media ADD COLUMN IF NOT EXISTS storage_path TEXT;
+    ALTER TABLE wp_custom_songs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
     CREATE TABLE IF NOT EXISTS wp_state (
       key TEXT PRIMARY KEY,
       value JSONB NOT NULL,
@@ -154,7 +157,7 @@ function sniffVideoMime(buf) {
   return null;
 }
 
-const customThemeImageDir = path.join(__dirname, 'public', 'images', 'custom-themes');
+const customThemeImageDir = process.env.THEME_DIR || path.join(__dirname, 'public', 'images', 'custom-themes');
 fs.mkdirSync(customThemeImageDir, { recursive: true });
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -192,7 +195,7 @@ const uploadPptx = multer({
   },
 });
 
-const mediaDiskDir = path.join(__dirname, 'public', 'images', 'media-library');
+const mediaDiskDir = process.env.MEDIA_DIR || path.join(__dirname, 'public', 'images', 'media-library');
 fs.mkdirSync(mediaDiskDir, { recursive: true });
 const mediaJsonPath = path.join(DATA_DIR, 'media.json');
 
@@ -472,8 +475,8 @@ function slugify(title) {
 async function loadCustomSongs() {
   if (pool) {
     try {
-      const { rows } = await pool.query('SELECT id, title, artist, sections FROM wp_custom_songs ORDER BY created_at');
-      return rows;
+      const { rows } = await pool.query('SELECT id, title, artist, sections, updated_at FROM wp_custom_songs ORDER BY created_at');
+      return rows.map(({ updated_at, ...r }) => ({ ...r, updatedAt: updated_at ? new Date(updated_at).toISOString() : null }));
     } catch (e) {
       console.error('DB read failed for custom songs, falling back to local file:', e.message);
       // fall through to file fallback below
@@ -484,13 +487,13 @@ async function loadCustomSongs() {
 
 async function addCustomSong(song) {
   if (pool) {
-    await pool.query('INSERT INTO wp_custom_songs (id, title, artist, sections) VALUES ($1, $2, $3, $4)', [
-      song.id, song.title, song.artist, JSON.stringify(song.sections),
+    await pool.query('INSERT INTO wp_custom_songs (id, title, artist, sections, updated_at) VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, now()))', [
+      song.id, song.title, song.artist, JSON.stringify(song.sections), song.updatedAt || null,
     ]);
     return;
   }
   const data = readJsonFile(songsPath, { songs: [] });
-  data.songs.push(song);
+  data.songs.push({ ...song, updatedAt: song.updatedAt || new Date().toISOString() });
   writeJsonFile(songsPath, data);
 }
 
@@ -506,11 +509,11 @@ async function deleteCustomSong(id) {
   return data.songs.length < before;
 }
 
-async function updateCustomSong(id, { title, artist, sections }) {
+async function updateCustomSong(id, { title, artist, sections, updatedAt }) {
   if (pool) {
     const { rowCount } = await pool.query(
-      'UPDATE wp_custom_songs SET title = $2, artist = $3, sections = $4 WHERE id = $1',
-      [id, title, artist, JSON.stringify(sections)],
+      'UPDATE wp_custom_songs SET title = $2, artist = $3, sections = $4, updated_at = COALESCE($5::timestamptz, now()) WHERE id = $1',
+      [id, title, artist, JSON.stringify(sections), updatedAt || null],
     );
     return rowCount > 0;
   }
@@ -520,6 +523,7 @@ async function updateCustomSong(id, { title, artist, sections }) {
   song.title = title;
   song.artist = artist;
   song.sections = sections;
+  song.updatedAt = updatedAt || new Date().toISOString();
   writeJsonFile(songsPath, data);
   return true;
 }
@@ -736,8 +740,10 @@ app.get('/healthz', async (req, res) => {
     } catch (e) { db = 'down'; }
   }
   res.set('Cache-Control', 'no-store');
-  res.status(db === 'down' ? 503 : 200).json({ ok: db !== 'down', db, storage: storage.enabled ? 'supabase' : 'database', uptime: Math.round(process.uptime()), auth: sec.AUTH_ENABLED && sec.AUTH_CONFIGURED });
+  res.status(db === 'down' ? 503 : 200).json({ ok: db !== 'down', version: APP_VERSION, db, storage: storage.enabled ? 'supabase' : 'database', uptime: Math.round(process.uptime()), auth: sec.AUTH_ENABLED && sec.AUTH_CONFIGURED });
 });
+
+app.get('/api/version', (req, res) => res.json({ version: APP_VERSION, desktop: !!process.env.WP_DESKTOP }));
 
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'views', 'login.html')));
 
@@ -764,6 +770,8 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// Desktop app: uploaded theme backgrounds live in the user's data folder.
+if (process.env.THEME_DIR) app.use('/images/custom-themes', express.static(customThemeImageDir, { maxAge: '7d' }));
 app.use(
   express.static(path.join(__dirname, 'public'), {
     maxAge: '1h',
@@ -886,7 +894,9 @@ app.put('/api/songs/:id', async (req, res) => {
     return res.status(400).json({ error: 'title and at least one section are required' });
   }
   try {
-    const updated = await updateCustomSong(req.params.id, { title, artist: sec.str(req.body.artist, 200), sections });
+    const ts = req.body.updatedAt ? new Date(req.body.updatedAt) : null;
+    const updatedAt = ts && !isNaN(ts) && ts.getTime() < Date.now() + 86400000 ? ts.toISOString() : null;
+    const updated = await updateCustomSong(req.params.id, { title, artist: sec.str(req.body.artist, 200), sections, updatedAt });
     if (!updated) return res.status(404).json({ error: 'Song not found (hymns cannot be edited this way)' });
     songCache = null; // invalidate
     res.json({ ok: true });
@@ -1319,33 +1329,67 @@ function runExclusive(fn) {
   pptxQueue = run.catch(() => {});
   return run;
 }
+
+// Saves a deck (title + ordered slide images). Slides are stored 4 at a time
+// (each one may be a Storage upload) and a half-saved deck is removed on failure.
+async function saveDeck(title, slideItems) {
+  let deckId = null;
+  try {
+    deckId = await saveMediaRow({ kind: 'deck', title, mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+    const slideIds = new Array(slideItems.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < slideItems.length) {
+        const i = next++;
+        slideIds[i] = await saveMediaRow({ kind: 'deck-slide', parentId: deckId, slideIndex: i, mimetype: slideItems[i].mimetype, buffer: slideItems[i].buffer });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, slideItems.length) }, worker));
+    const slides = slideIds.map((slideId) => ({ id: slideId, url: `/api/media/file/${slideId}` }));
+    return { id: deckId, kind: 'deck', title, slideCount: slides.length, slides };
+  } catch (e) {
+    if (deckId) await deleteMediaItem(deckId).catch(() => {});
+    throw e;
+  }
+}
+
 app.post('/api/media/pptx', uploadPptx.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No PowerPoint file uploaded (.ppt/.pptx, max 50MB)' });
   // .pptx is a zip (PK..); legacy .ppt is an OLE2 container (D0 CF 11 E0)
   const head = req.file.buffer.subarray(0, 4);
   const okMagic = head.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) || head.equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0]));
   if (!okMagic) return res.status(400).json({ error: 'That file is not a valid PowerPoint presentation' });
-  let deckId = null;
   try {
     const title = sec.str((req.body.title || req.file.originalname.replace(/\.(pptx|ppt)$/i, '')).trim(), 200);
     const ext = /\.ppt$/i.test(req.file.originalname) ? '.ppt' : '.pptx';
     const slideBuffers = await runExclusive(() => convertDeckToSlideImages(req.file.buffer, ext));
-    deckId = await saveMediaRow({ kind: 'deck', title, mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
-    const slideIds = new Array(slideBuffers.length);
-    let nextSlide = 0;
-    const saveWorker = async () => { // 4 at a time — each slide is a Storage upload
-      while (nextSlide < slideBuffers.length) {
-        const i = nextSlide++;
-        slideIds[i] = await saveMediaRow({ kind: 'deck-slide', parentId: deckId, slideIndex: i, mimetype: 'image/png', buffer: slideBuffers[i] });
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(4, slideBuffers.length) }, saveWorker));
-    const slides = slideIds.map((slideId) => ({ id: slideId, url: `/api/media/file/${slideId}` }));
-    res.json({ id: deckId, kind: 'deck', title, slideCount: slides.length, slides });
+    res.json(await saveDeck(title, slideBuffers.map((buffer) => ({ buffer, mimetype: 'image/png' }))));
   } catch (e) {
     console.error('PPTX conversion error:', e.message);
-    if (deckId) await deleteMediaItem(deckId).catch(() => {}); // never leave a half-saved deck behind
     res.status(500).json({ error: e.message || 'Could not convert PowerPoint file' });
+  }
+});
+
+// A deck made of ready-made slide images (used when syncing decks between the
+// desktop app and the cloud copy, and for decks converted by PowerPoint locally).
+const uploadDeckImages = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 300 },
+  fileFilter: (req, file, cb) => cb(null, /^image\//.test(file.mimetype)),
+});
+app.post('/api/media/deck/import', uploadDeckImages.array('files', 300), async (req, res) => {
+  const files = req.files || [];
+  if (!files.length) return res.status(400).json({ error: 'No slide images uploaded' });
+  const items = [];
+  for (const f of files) {
+    const mimetype = sniffImageMime(f.buffer);
+    if (!mimetype) return res.status(400).json({ error: 'One of the slides is not a valid image' });
+    items.push({ buffer: f.buffer, mimetype });
+  }
+  try {
+    res.json(await saveDeck(sec.str((req.body.title || 'Imported deck').trim(), 200), items));
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save deck: ' + e.message });
   }
 });
 
@@ -1591,7 +1635,8 @@ app.post('/api/restore', async (req, res) => {
       const title = sec.str(s && s.title, 200).trim();
       const id = sec.str(s && s.id, 200);
       if (!sections || !title || !id || existingSongs.has(id)) continue;
-      await addCustomSong({ id, title, artist: sec.str(s.artist, 200), sections });
+      const rts = s.updatedAt ? new Date(s.updatedAt) : null;
+      await addCustomSong({ id, title, artist: sec.str(s.artist, 200), sections, updatedAt: rts && !isNaN(rts) ? rts.toISOString() : null });
       added.songs++;
     }
     const existingAnn = new Set((await loadAnnouncementsList()).map((a) => a.text));
@@ -1666,9 +1711,17 @@ async function migrateMediaToStorage() {
 // current screen state first so the next instance resumes exactly where we were).
 // ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 4000;
+// Render needs 0.0.0.0; the desktop app binds to 127.0.0.1 unless the operator
+// switches on "phone remote on this network".
+const HOST = process.env.BIND_HOST || '0.0.0.0';
+let resolveReady, rejectReady;
+const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+ready.catch(() => {});
+server.on('error', (e) => { console.error('Server error:', e.message); rejectReady(e); });
 function listen() {
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     console.log(`Worship Presenter running at http://localhost:${PORT}`);
+    resolveReady({ port: server.address().port, host: HOST });
     if (!sec.AUTH_CONFIGURED) {
       console.warn(sec.IS_PROD
         ? 'WARNING: OPERATOR_PASSWORD is not set — the control room is LOCKED until you set it.'
@@ -1695,4 +1748,4 @@ async function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-module.exports = { app, server };
+module.exports = { app, server, ready, flush: flushState };
