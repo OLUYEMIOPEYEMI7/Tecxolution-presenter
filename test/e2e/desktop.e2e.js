@@ -21,8 +21,9 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   // ---- the desktop app, in a fresh user-data folder
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-userdata-'));
   const app = await electron.launch({
-    executablePath: require('electron'),
-    args: [REPO, '--no-sandbox'],
+    // WP_APP_BINARY runs the packaged app (e.g. dist/linux-unpacked/worship-presenter); default runs from source
+    executablePath: process.env.WP_APP_BINARY || require('electron'),
+    args: process.env.WP_APP_BINARY ? ['--no-sandbox'] : [REPO, '--no-sandbox'],
     env: { ...process.env, WP_TEST: '1', WP_TEST_UPDATE: '9.9.9', WP_USER_DATA: userData, WP_PORT: '4960' },
   });
   const win = await app.firstWindow();

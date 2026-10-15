@@ -1,0 +1,63 @@
+name: Desktop app
+
+# - every push to a feature branch: run all tests and build the Windows installer (not published)
+# - pushing a tag like v1.0.1: the same, then PUBLISH a GitHub Release — installed copies of
+#   the app find it and update themselves.
+on:
+  push:
+    branches: ['ccr-*']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the release
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm test
+      - name: Desktop end-to-end test (real Electron app under a virtual display)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgbm1 libnss3 libgtk-3-0t64 libasound2t64
+          npm run test:desktop
+
+  windows-installer:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+
+      - name: Release tag must match package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if [ "refs/tags/v$v" != "$GITHUB_REF" ]; then echo "Tag $GITHUB_REF does not match package.json version $v"; exit 1; fi
+
+      - name: Build installer${{ startsWith(github.ref, 'refs/tags/v') && ' and publish release' || '' }}
+        shell: bash
+        run: npx electron-builder --win --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned build (no code-signing certificate yet)
+
+      - name: Keep the installer from branch builds for download
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Worship-Presenter-Setup
+          path: |
+            dist/*.exe
+            dist/latest.yml
+          retention-days: 14

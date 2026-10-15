@@ -4,6 +4,11 @@ Live worship projection software: song slides, scripture, media, PowerPoint deck
 ticker, countdown and alerts — controlled from a laptop or phone, shown on the
 projector in real time (WebSocket-synced).
 
+## Desktop app (Windows)
+An installable version runs **offline and online**, keeps your data on the PC, syncs with the online copy and
+**updates itself** — see **[docs/DESKTOP.md](docs/DESKTOP.md)**. Download the installer from the
+[latest release](https://github.com/OLUYEMIOPEYEMI7/Tecxolution-presenter/releases/latest).
+
 ## Pages
 | URL | Who | Purpose |
 |---|---|---|
