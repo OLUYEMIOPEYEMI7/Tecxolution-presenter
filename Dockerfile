@@ -17,9 +17,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev && npm cache clean --force
 COPY . .
 
+# Run as the unprivileged "node" user (not root). It owns /app so uploads /
+# runtime state can be written, and gets a writable HOME for LibreOffice.
+RUN mkdir -p /app/data /app/public/images/media-library /app/public/images/custom-themes \
+    && chown -R node:node /app
+USER node
+ENV HOME=/home/node
 ENV NODE_ENV=production
 EXPOSE 4000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "server.js"]

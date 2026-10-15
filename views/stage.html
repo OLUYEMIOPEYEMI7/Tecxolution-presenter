@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Stage Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,600;1,500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/presenter.css" />
+</head>
+<body class="stage-monitor">
+  <div class="sm-top">
+    <span id="sm-title">Stage Monitor</span>
+    <span id="sm-timer" class="sm-timer"></span>
+    <span id="sm-clock" class="sm-clock"></span>
+  </div>
+  <div class="sm-now" id="sm-now"></div>
+  <div>
+    <div class="sm-alert" id="sm-alert"></div>
+    <div class="sm-next"><div class="sm-next-label">Up next</div><div id="sm-next"></div></div>
+  </div>
+  <div class="sm-black" id="sm-black"></div>
+  <div class="sm-status" id="sm-status">connecting…</div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/stage.js"></script>
+</body>
+</html>

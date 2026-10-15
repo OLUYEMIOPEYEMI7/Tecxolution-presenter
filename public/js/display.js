@@ -1,4 +1,5 @@
 const socket = io();
+socket.on('connect', () => { socket.emit('hello', 'display'); window.syncServerTime(socket); });
 
 // Auto-fullscreen when launched from the Control Room's "Open Projection
 // Screen" button. This can silently fail (the click's user-activation can
@@ -60,6 +61,7 @@ if (!isEmbeddedPreview) {
 }
 
 
+const isPreview = new URLSearchParams(location.search).get('mode') === 'preview';
 const stage = document.getElementById('stage');
 const stageBg = document.getElementById('stage-bg');
 const stageContent = document.getElementById('stage-content');
@@ -70,6 +72,10 @@ const stageVideoEmbed = document.getElementById('stage-video-embed');
 const tickerBar = document.getElementById('ticker-bar');
 const tickerText = document.getElementById('ticker-text');
 let tickerActive = false;
+const timerOverlay = document.getElementById('timer-overlay');
+const timerDigits = document.getElementById('timer-digits');
+const timerLabel = document.getElementById('timer-label');
+const alertBanner = document.getElementById('alert-banner');
 
 // YouTube/Vimeo watch-page links need to be converted to their embeddable
 // iframe form; a direct file link (.mp4/.webm/pasted CDN URL) plays natively
@@ -82,9 +88,18 @@ function toEmbedUrl(url) {
   return null;
 }
 
+let currentType = 'blank';
+let currentTheme = 'photo';
+let overlayMode = 'none';
+function applyStageClass() {
+  stage.className = 'stage ' + currentType + ' theme-' + currentTheme + (overlayMode !== 'none' ? ' ov-' + overlayMode : '');
+}
+
 function render(state) {
   const theme = state.theme || 'photo';
-  stage.className = 'stage ' + (state.type || 'blank') + ' theme-' + (state.themeBg ? 'custom' : theme);
+  currentType = state.type || 'blank';
+  currentTheme = state.themeBg ? 'custom' : theme;
+  applyStageClass();
   stage.style.background = state.themeBg || '';
 
   if (theme === 'photo' && state.background) {
@@ -153,6 +168,10 @@ function render(state) {
     stageLabel.textContent = '';
   }
 
+  // Soft cross-fade between slides instead of a hard cut.
+  stageContent.classList.remove('fade-in');
+  void stageContent.offsetWidth;
+  stageContent.classList.add('fade-in');
   fitContent();
 }
 
@@ -202,6 +221,49 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-const isPreview = new URLSearchParams(location.search).get('mode') === 'preview';
 socket.on(isPreview ? 'preview-state' : 'live-state', render);
 socket.on('ticker-state', renderTicker);
+
+// Black / Logo / Clear-text overlay (live slide is kept underneath).
+socket.on('overlay-state', (mode) => {
+  overlayMode = mode || 'none';
+  applyStageClass();
+});
+
+// Text size (set from the control room) — applied via a CSS variable.
+socket.on('settings-state', (s) => {
+  document.documentElement.style.setProperty('--font-scale', (s && s.fontScale) || 1);
+  fitContent();
+});
+
+// Service countdown / sermon timer. Driven by the server clock so the
+// projector, stage monitor and remote all show the same time.
+let timer = { active: false };
+let timerTick = null;
+function drawTimer() {
+  if (isPreview || !timer.active || !timer.onDisplay) { timerOverlay.classList.remove('on'); return; }
+  const diff = timer.mode === 'up' ? serverNow() - timer.target : timer.target - serverNow();
+  timerOverlay.classList.add('on');
+  timerLabel.textContent = timer.label || '';
+  timerDigits.textContent = window.formatClock(Math.max(0, diff));
+  timerDigits.classList.toggle('done', timer.mode === 'down' && diff <= 0);
+}
+socket.on('timer-state', (t) => {
+  timer = t || { active: false };
+  clearInterval(timerTick);
+  drawTimer();
+  if (timer.active) timerTick = setInterval(drawTimer, 250);
+});
+
+// Temporary alert banner (e.g. a nursery call).
+let alertHide = null;
+socket.on('alert-state', (a) => {
+  clearTimeout(alertHide);
+  if (isPreview || !a || !a.text || a.until <= serverNow()) { alertBanner.classList.remove('on'); return; }
+  alertBanner.textContent = a.text;
+  alertBanner.classList.add('on');
+  alertHide = setTimeout(() => alertBanner.classList.remove('on'), Math.max(500, a.until - serverNow()));
+});
+
+// Don't hold a stale video/iframe when the projector tab is hidden then shown.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) fitContent(); });

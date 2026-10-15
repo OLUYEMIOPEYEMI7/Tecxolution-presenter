@@ -1,16 +1,51 @@
-# Peculiar Voices — Worship Presenter (Phase 1)
+# Peculiar Voices — Worship Presenter
 
-Live two-screen worship projection software: pick a song slide or look up
-scripture from the control room, and it instantly appears on the projection
-screen in real time (WebSocket-synced).
+Live worship projection software: song slides, scripture, media, PowerPoint decks,
+ticker, countdown and alerts — controlled from a laptop or phone, shown on the
+projector in real time (WebSocket-synced).
+
+## Pages
+| URL | Who | Purpose |
+|---|---|---|
+| `/control` | operator (sign-in) | Control room: songs, scripture, schedule, media, timer, alerts |
+| `/display` | public (view-only) | The projector output — open fullscreen on the second screen |
+| `/stage` | public (view-only) | Stage / confidence monitor: current slide, **next** slide, clock, timer, alerts |
+| `/remote` | operator (sign-in) | Phone remote: next/prev/go-live, black/logo/clear, alerts, schedule |
+| `/healthz` | public | Health + DB status (use as the Render health-check path) |
+
+## Configuration (environment variables)
+| Variable | Required | Notes |
+|---|---|---|
+| `OPERATOR_PASSWORD` | **yes (production)** | Operator sign-in. With `NODE_ENV=production` and no password the control room is locked (fails closed). |
+| `SESSION_SECRET` | optional | Signs login cookies. Defaults to a key derived from the password (changing the password signs everyone out). |
+| `DATABASE_URL` | recommended | Supabase/Postgres. Without it data lives in local files and is wiped on every redeploy. |
+| `API_BIBLE_KEY` / `NLT_API_KEY` | optional | NIV/AMP/MSG via API.Bible; higher NLT limits. |
+| `DATA_DIR` | optional | Where file-fallback data is written (default `./data`). |
 
 ## Run it
 ```
-./start.sh
+npm install
+OPERATOR_PASSWORD=choose-one ./start.sh
+npm test        # end-to-end tests (auth, socket gating, validation, uploads, persistence)
 ```
-Then open:
-- **Control room** (your laptop): http://localhost:4000/control
-- **Projection screen** (drag to the projector/second monitor, fullscreen it): http://localhost:4000/display
+
+## Operator shortcuts
+`←` `→` previous/next slide · `Enter`/`Space` go live · `Esc` clear all ·
+`B` black · `L` logo · `C` clear text (press again to restore the same slide).
+
+## Security model
+- Operator session = signed, HttpOnly, SameSite=Lax cookie; login is rate-limited.
+- Every write API and every write socket event requires the session; the projector and stage monitor are view-only.
+- All socket payloads, uploads (checked by magic bytes), links and schedule items are validated server-side.
+- CSP and security headers on every response; same-origin check on writes.
+- Postgres tables are RLS-enabled with no public policy — only this server can reach them.
+
+## Reliability
+- Live screen, preview, ticker, timer, overlay and text size are persisted and restored after a restart or free-tier sleep.
+- Service worker caches the projector shell and images; open screens keep the server awake (keep-alive ping) and reconnect automatically.
+- Graceful shutdown saves state on every Render deploy. DB pool errors can no longer crash the process.
+- One PowerPoint conversion at a time (LibreOffice is memory-hungry); video supports Range requests.
+- `Backup` / `Restore` in the control room export/merge songs, schedule, announcements and saved texts.
 
 ## Add more songs
 Edit `data/songs.json` — each song has sections (verse/chorus/etc.) with

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Sign in — Worship Presenter</title>
+<link rel="stylesheet" href="/css/presenter.css" />
+<style>
+  body { min-height:100vh; display:flex; align-items:center; justify-content:center; background:radial-gradient(ellipse at center,#13131f 0%,#06060b 78%); color:#f4ead2; }
+  .login-card { width:min(380px,92vw); background:#0e0e1c; border:1px solid #2a2a44; border-radius:14px; padding:28px 26px 24px; box-shadow:0 20px 60px rgba(0,0,0,.6); text-align:center; }
+  .login-card img { width:64px; height:64px; border-radius:50%; background:#fff; padding:4px; margin:0 4px 14px; }
+  .login-card h1 { font-size:20px; margin:0 0 4px; letter-spacing:.5px; }
+  .login-card p { margin:0 0 18px; font-size:12px; color:#9a9ab5; }
+  .login-card input { width:100%; padding:12px 14px; border-radius:8px; border:1px solid #33335a; background:#0b0b1a; color:#fff; font-size:15px; }
+  .login-card input:focus { outline:2px solid #d4a63a; border-color:transparent; }
+  .login-card button { width:100%; margin-top:12px; padding:12px; font-size:15px; }
+  #err { min-height:18px; margin-top:10px; font-size:12px; color:#ff8a8a; }
+</style>
+</head>
+<body>
+  <form class="login-card" id="f" autocomplete="on">
+    <div><img src="/images/brand/rccg-logo.png" alt="" /><img src="/images/brand/yp9-logo.png" alt="" /></div>
+    <h1>Worship Presenter</h1>
+    <p>Operator sign-in — the projector screen needs no login.</p>
+    <input type="password" id="pw" name="password" placeholder="Operator password" autocomplete="current-password" autofocus required />
+    <button type="submit" id="go">Sign in</button>
+    <div id="err" role="alert"></div>
+  </form>
+<script>
+  const params = new URLSearchParams(location.search);
+  let next = params.get('next') || '/control';
+  if (!/^\/(?!\/)/.test(next)) next = '/control'; // same-site paths only — no open redirect
+  document.getElementById('f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('go'), err = document.getElementById('err');
+    btn.disabled = true; err.textContent = '';
+    try {
+      const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password: document.getElementById('pw').value }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { location.href = next; return; }
+      err.textContent = d.error || 'Could not sign in.';
+    } catch (x) { err.textContent = 'Network problem — check your connection and try again.'; }
+    btn.disabled = false;
+  });
+</script>
+</body>
+</html>
