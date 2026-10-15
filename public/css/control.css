@@ -243,3 +243,21 @@ code { background: var(--panel-3); padding: 1px 5px; border-radius: 4px; font-si
 .cv-num { padding: 6px 0; width: 38px; font-size: 12px; }
 .cv-num.sel { background: var(--gold); color: #1a1000; }
 .cv-num.live { outline: 2px solid var(--live-red); }
+
+/* ---------- desktop app: connection chip, update banner, cloud box ---------- */
+.net-chip { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--panel-2); color: var(--text-soft); border: 1px solid var(--border-strong); box-shadow: none; cursor: pointer; white-space: nowrap; }
+.net-chip:hover { transform: none; box-shadow: none; background: var(--panel-3); }
+.net-chip.ok { color: #6fcf97; border-color: rgba(111,207,151,.35); }
+.net-chip.warn { color: #f2c94c; border-color: rgba(242,201,76,.4); background: rgba(242,201,76,.08); }
+.net-chip.bad { color: #ff8a93; border-color: rgba(239,74,86,.4); }
+.update-banner { position: fixed; right: 18px; bottom: 18px; z-index: 9000; max-width: 380px; background: var(--panel-3); border: 1px solid var(--border-gold); border-left: 3px solid var(--gold); border-radius: 12px; padding: 14px 16px; box-shadow: 0 18px 50px rgba(0,0,0,.6); font-size: 13px; color: var(--text); }
+.update-banner[hidden] { display: none; }
+.update-banner .ub-title { font-weight: 700; margin-bottom: 4px; }
+.update-banner .ub-sub { color: var(--text-soft); font-size: 12px; line-height: 1.45; }
+.update-banner .ub-actions { display: flex; gap: 8px; margin-top: 10px; }
+.update-banner .ub-actions button { padding: 7px 12px; font-size: 12px; }
+.update-banner progress { width: 100%; height: 6px; margin-top: 8px; accent-color: var(--gold); }
+.desktop-note { font-size: 11.5px; color: var(--text-soft); background: rgba(242,201,76,.08); border: 1px solid rgba(242,201,76,.3); border-radius: 8px; padding: 9px 11px; margin-bottom: 10px; line-height: 1.5; }
+#cloud-box input[type=text], #cloud-box input[type=password] { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--panel-0); color: var(--text); font-size: 13px; font-family: var(--font-ui); }
+#cloud-box .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+#cloud-box .sync-line { font-size: 12px; color: var(--text-soft); margin-top: 10px; line-height: 1.5; }

@@ -12,6 +12,8 @@ const PASSWORD = 'test-pass-123';
 const PORT = 4100 + Math.floor(Math.random() * 500);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'wp-test-'));
+const MEDIA_DIR = path.join(DATA_DIR, 'media');
+const THEME_DIR = path.join(DATA_DIR, 'themes');
 let proc;
 let cookie = '';
 
@@ -19,7 +21,7 @@ function start(env = {}) {
   return new Promise((resolve, reject) => {
     proc = spawn('node', ['server.js'], {
       cwd: path.join(__dirname, '..'),
-      env: { ...process.env, PORT: String(PORT), DATA_DIR, OPERATOR_PASSWORD: PASSWORD, REMOTE_PASSWORD: 'volunteer-pass', NODE_ENV: 'test', DATABASE_URL: '', ...env },
+      env: { ...process.env, PORT: String(PORT), DATA_DIR, MEDIA_DIR, THEME_DIR, BIND_HOST: '127.0.0.1', OPERATOR_PASSWORD: PASSWORD, REMOTE_PASSWORD: 'volunteer-pass', NODE_ENV: 'test', DATABASE_URL: '', ...env },
     });
     proc.stdout.on('data', (d) => { if (String(d).includes('running at')) resolve(); });
     proc.stderr.on('data', (d) => process.env.TEST_VERBOSE && process.stderr.write(d));
@@ -285,6 +287,60 @@ test('uploads: content is verified by bytes, not by claimed type', async () => {
   assert.strictEqual((await api('/api/media/video', { method: 'POST', body: goodLink })).status, 200);
 });
 
+test('user data (media, themes) is written to the configured folders; version is reported', async () => {
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(60, 3)]);
+  const fd = new FormData();
+  fd.append('file', new Blob([png], { type: 'image/png' }), 'where.png');
+  assert.strictEqual((await api('/api/media/image', { method: 'POST', body: fd })).status, 200);
+  assert.ok(fs.readdirSync(MEDIA_DIR).some((f) => f.endsWith('.png')), 'media saved under MEDIA_DIR');
+  const th = new FormData();
+  th.append('image', new Blob([png], { type: 'image/png' }), 'bg.png');
+  const t = await (await api('/api/theme-image', { method: 'POST', body: th })).json();
+  assert.match(t.url, /^\/images\/custom-themes\//);
+  assert.ok(fs.readdirSync(THEME_DIR).length >= 1, 'theme image saved under THEME_DIR');
+  const served = await api(t.url);
+  assert.strictEqual(served.status, 200);
+  const v = await (await api('/api/version')).json();
+  assert.match(v.version, /^\d+\.\d+\.\d+/);
+});
+
+test('decks can be imported from slide images, in order, and deleted cleanly', async () => {
+  const png = (n) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, n)]);
+  const fd = new FormData();
+  fd.append('title', 'Imported deck');
+  [1, 2, 3].forEach((n) => fd.append('files', new Blob([png(n)], { type: 'image/png' }), `slide${n}.png`));
+  const r = await api('/api/media/deck/import', { method: 'POST', body: fd });
+  assert.strictEqual(r.status, 200);
+  const deck = await r.json();
+  assert.strictEqual(deck.slideCount, 3);
+  const slides = await (await api('/api/media/deck/' + deck.id)).json();
+  assert.strictEqual(slides.slides.length, 3);
+  for (let i = 0; i < 3; i++) {
+    const bytes = Buffer.from(await (await api(slides.slides[i].url)).arrayBuffer());
+    assert.ok(bytes.equals(png(i + 1)), 'slide ' + (i + 1) + ' is in order');
+  }
+  const bad = new FormData();
+  bad.append('files', new Blob(['not an image'], { type: 'image/png' }), 'x.png');
+  assert.strictEqual((await api('/api/media/deck/import', { method: 'POST', body: bad })).status, 400);
+  assert.strictEqual((await api('/api/media/' + deck.id, { method: 'DELETE' })).status, 200);
+  assert.strictEqual((await api('/api/media/deck/' + deck.id)).status, 404);
+});
+
+test('songs carry an updatedAt timestamp that edits and restores preserve', async () => {
+  const mk = await (await api('/api/songs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Stamp Me', sections: [{ label: 'V', pairs: [['one', '']] }] }) })).json();
+  const b1 = await (await api('/api/backup')).json();
+  const s1 = b1.songs.find((x) => x.id === mk.id);
+  assert.ok(Date.parse(s1.updatedAt) > Date.now() - 60000);
+  const past = '2020-01-02T03:04:05.000Z';
+  await api('/api/songs/' + mk.id, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Stamp Me', sections: [{ label: 'V', pairs: [['two', '']] }], updatedAt: past }) });
+  const s2 = (await (await api('/api/backup')).json()).songs.find((x) => x.id === mk.id);
+  assert.strictEqual(s2.updatedAt, past);
+  await api('/api/songs/' + mk.id, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Stamp Me', sections: [{ label: 'V', pairs: [['three', '']] }] }) });
+  const s3 = (await (await api('/api/backup')).json()).songs.find((x) => x.id === mk.id);
+  assert.ok(Date.parse(s3.updatedAt) > Date.now() - 60000, 'a normal edit stamps "now"');
+  await api('/api/songs/' + mk.id, { method: 'DELETE' });
+});
+
 test('video files support HTTP Range requests', async () => {
   const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(100, 7)]);
   const fd = new FormData();
@@ -321,6 +377,30 @@ test('backup downloads and restore merges without duplicating', async () => {
   const re = await (await api('/api/restore', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(backup) })).json();
   assert.ok(re.added.songs >= 1);
   assert.strictEqual((await api('/api/restore', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ app: 'other' }) })).status, 400);
+});
+
+test('scripture: KJV and WEB are served from the bundled texts (works with no internet)', async () => {
+  const get = async (q, v = 'kjv') => (await api(`/api/scripture?ref=${encodeURIComponent(q)}&version=${v}`));
+  const jn = await (await get('jn 3:16')).json();
+  assert.strictEqual(jn.reference, 'John 3:16');
+  assert.strictEqual(jn.text, 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.');
+  assert.strictEqual(jn.translation, 'King James Version');
+  assert.strictEqual(jn.book, 'John');
+  assert.deepStrictEqual(jn.verses.map((x) => x.n), [16]);
+  const web = await (await get('John 3:16', 'web')).json();
+  assert.match(web.text, /one and only Son/);
+  const ps = await (await get('Psalm 23')).json();
+  assert.strictEqual(ps.verses.length, 6);
+  assert.strictEqual(ps.reference, 'Psalm 23');
+  const range = await (await get('Genesis 1:1-3')).json();
+  assert.strictEqual(range.verses.length, 3);
+  assert.strictEqual(range.reference, 'Genesis 1:1-3');
+  assert.strictEqual((await get('Genesis 1:99')).status, 404);
+  assert.strictEqual((await get('Nonsense 1:1')).status, 400);
+  const last = await (await get('Revelation 22:21')).json();
+  assert.match(last.text, /grace of our Lord Jesus Christ/);
+  const versions = await (await api('/api/bible-versions')).json();
+  assert.ok(versions.versions.find((x) => x.code === 'kjv').offline);
 });
 
 test('scripture: chapter + abbreviation references parse (offline-safe checks)', async () => {

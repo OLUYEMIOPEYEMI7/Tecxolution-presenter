@@ -41,7 +41,10 @@ function showFullscreenPrompt() {
 // black button and hide the content entirely, which is its own bug.
 const isEmbeddedPreview = window.self !== window.top;
 
-if (!isEmbeddedPreview) {
+const isDesktopProjector = new URLSearchParams(location.search).get('desktop') === '1';
+if (isDesktopProjector) document.documentElement.classList.add('desktop-projector'); // the app window is already fullscreen on the projector
+
+if (!isEmbeddedPreview && !isDesktopProjector) {
   if (new URLSearchParams(location.search).get('launch') === '1') {
     document.documentElement.requestFullscreen().catch(() => showFullscreenPrompt());
   } else {

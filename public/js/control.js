@@ -499,7 +499,7 @@ fetch('/api/bible-versions')
   .then((data) => {
     const sel = document.getElementById('bible-version-select');
     sel.innerHTML = data.versions.map((v) => {
-      const label = v.available ? v.name : `${v.name} (not available — ${v.reason})`;
+      const label = v.available ? v.name + (v.offline ? '  ✓ works offline' : '') : `${v.name} (not available — ${v.reason})`;
       return `<option value="${v.code}" ${v.available ? '' : 'disabled'}>${label}</option>`;
     }).join('');
     sel.value = 'kjv';
@@ -851,6 +851,12 @@ function clearStage() {
 }
 
 async function openDisplay() {
+  // Desktop app: the shell puts the projector on the second screen itself.
+  if (window.desktop) {
+    const r = await window.desktop.openProjector();
+    if (window.toast) window.toast(r.already ? 'Projector is already open.' : r.onSecondScreen ? 'Projector opened on the second screen.' : 'Only one screen found — projector opened in a window. Connect the projector, then press F5 to move it.', 'ok');
+    return;
+  }
   // Modern Chrome/Edge: ask which monitors are connected, then open the
   // projection screen positioned exactly on the non-primary one and
   // full-screened automatically — no manual dragging needed. Race against
@@ -1098,7 +1104,7 @@ document.getElementById('media-tabs').addEventListener('click', (e) => {
   if (!btn) return;
   document.querySelectorAll('#media-tabs .song-tab').forEach((t) => t.classList.remove('active'));
   btn.classList.add('active');
-  ['image', 'video', 'pptx'].forEach((tab) => {
+  ['image', 'video', 'pptx', 'deck'].forEach((tab) => {
     document.getElementById('media-tab-' + tab).style.display = tab === btn.dataset.mediaTab ? 'block' : 'none';
   });
 });
@@ -1170,6 +1176,29 @@ function uploadMediaPptx() {
       document.getElementById('media-pptx-title').value = '';
       reloadMediaLibrary();
       addDeckToSchedule(data); // the whole point of "upload this for the schedule" — one step, not two
+    })
+    .catch((e) => setMediaStatus('Failed: ' + e.message));
+}
+
+// Several pictures -> one deck, in natural file-name order (slide2 before slide10).
+function uploadMediaDeckImages() {
+  const input = document.getElementById('media-deck-files');
+  const files = [...input.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (!files.length) { alert('Choose the slide pictures first.'); return; }
+  const title = document.getElementById('media-deck-title').value.trim() || 'Deck of ' + files.length + ' slides';
+  const formData = new FormData();
+  formData.append('title', title);
+  files.forEach((f) => formData.append('files', f));
+  setMediaStatus(`Uploading ${files.length} slides…`);
+  fetch('/api/media/deck/import', { method: 'POST', body: formData })
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.error) { setMediaStatus('Failed: ' + data.error); return; }
+      setMediaStatus(`Created "${data.title}" — ${data.slideCount} slides. Added to schedule.`);
+      input.value = '';
+      document.getElementById('media-deck-title').value = '';
+      reloadMediaLibrary();
+      addDeckToSchedule(data);
     })
     .catch((e) => setMediaStatus('Failed: ' + e.message));
 }
