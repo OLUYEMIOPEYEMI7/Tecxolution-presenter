@@ -323,6 +323,30 @@ test('backup downloads and restore merges without duplicating', async () => {
   assert.strictEqual((await api('/api/restore', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ app: 'other' }) })).status, 400);
 });
 
+test('scripture: KJV and WEB are served from the bundled texts (works with no internet)', async () => {
+  const get = async (q, v = 'kjv') => (await api(`/api/scripture?ref=${encodeURIComponent(q)}&version=${v}`));
+  const jn = await (await get('jn 3:16')).json();
+  assert.strictEqual(jn.reference, 'John 3:16');
+  assert.strictEqual(jn.text, 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.');
+  assert.strictEqual(jn.translation, 'King James Version');
+  assert.strictEqual(jn.book, 'John');
+  assert.deepStrictEqual(jn.verses.map((x) => x.n), [16]);
+  const web = await (await get('John 3:16', 'web')).json();
+  assert.match(web.text, /one and only Son/);
+  const ps = await (await get('Psalm 23')).json();
+  assert.strictEqual(ps.verses.length, 6);
+  assert.strictEqual(ps.reference, 'Psalm 23');
+  const range = await (await get('Genesis 1:1-3')).json();
+  assert.strictEqual(range.verses.length, 3);
+  assert.strictEqual(range.reference, 'Genesis 1:1-3');
+  assert.strictEqual((await get('Genesis 1:99')).status, 404);
+  assert.strictEqual((await get('Nonsense 1:1')).status, 400);
+  const last = await (await get('Revelation 22:21')).json();
+  assert.match(last.text, /grace of our Lord Jesus Christ/);
+  const versions = await (await api('/api/bible-versions')).json();
+  assert.ok(versions.versions.find((x) => x.code === 'kjv').offline);
+});
+
 test('scripture: chapter + abbreviation references parse (offline-safe checks)', async () => {
   const r = await api('/api/scripture?ref=' + encodeURIComponent('not a ref at all!!!'));
   assert.strictEqual(r.status, 400);

@@ -11,6 +11,7 @@ const cheerio = require('cheerio');
 const sec = require('./lib/security');
 const storage = require('./lib/storage');
 const lyricsLib = require('./lib/lyrics');
+const offlineBible = require('./lib/bible-offline');
 
 const app = express();
 app.set('trust proxy', 1); // Render terminates TLS in front of us — needed for real client IPs
@@ -1047,6 +1048,13 @@ app.get('/api/scripture', async (req, res) => {
   const cached = scriptureCache.get(cacheKey);
   if (cached) return res.json(cached); // instant — no network round trip
 
+  // Bundled translations (KJV, WEB) are answered locally — no network needed.
+  const local = offlineBible.lookup(version, ref);
+  if (local) {
+    if (local.error) return res.status(local.status).json({ error: local.error });
+    return res.json(local);
+  }
+
   if (version === 'nlt') {
     return fetchNltScripture(ref, cacheKey, res);
   }
@@ -1109,8 +1117,8 @@ function fetchNltScripture(ref, cacheKey, res) {
 app.get('/api/bible-versions', (req, res) => {
   res.json({
     versions: [
-      { code: 'kjv', name: 'King James Version', available: true },
-      { code: 'web', name: 'World English Bible', available: true },
+      { code: 'kjv', name: 'King James Version', available: true, offline: offlineBible.available('kjv') },
+      { code: 'web', name: 'World English Bible', available: true, offline: offlineBible.available('web') },
       { code: 'webbe', name: 'World English Bible (British)', available: true },
       { code: 'asv', name: 'American Standard Version', available: true },
       { code: 'bbe', name: 'Bible in Basic English', available: true },

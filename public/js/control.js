@@ -499,7 +499,7 @@ fetch('/api/bible-versions')
   .then((data) => {
     const sel = document.getElementById('bible-version-select');
     sel.innerHTML = data.versions.map((v) => {
-      const label = v.available ? v.name : `${v.name} (not available — ${v.reason})`;
+      const label = v.available ? v.name + (v.offline ? '  ✓ works offline' : '') : `${v.name} (not available — ${v.reason})`;
       return `<option value="${v.code}" ${v.available ? '' : 'disabled'}>${label}</option>`;
     }).join('');
     sel.value = 'kjv';
