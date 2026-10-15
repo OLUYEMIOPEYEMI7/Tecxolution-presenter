@@ -12,6 +12,7 @@ const sec = require('./lib/security');
 const storage = require('./lib/storage');
 const lyricsLib = require('./lib/lyrics');
 const offlineBible = require('./lib/bible-offline');
+const syncLib = require('./lib/sync');
 
 const APP_VERSION = require('./package.json').version;
 
@@ -337,7 +338,7 @@ async function deleteMediaItem(id) {
 // Requires: soffice (LibreOffice), pdftoppm (poppler-utils), and python3
 // with the "pptx" package — NOT available on Render's native Node runtime;
 // this only works where those binaries are installed (e.g. a Docker deploy).
-function convertDeckToSlideImages(buffer, originalExt) {
+function convertWithLibreOffice(buffer, originalExt) {
   return new Promise((resolve, reject) => {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-'));
     const srcPath = path.join(workDir, 'input' + originalExt);
@@ -387,6 +388,60 @@ prs.save(sys.argv[2])
       try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
     }
   });
+}
+
+// Windows PCs: drive the installed Microsoft PowerPoint (COM) to export each
+// slide as a PNG — exact fidelity, fully offline, nothing else to install.
+const POWERPOINT_EXPORT_SCRIPT = `
+param([string]$InFile, [string]$OutDir)
+$ErrorActionPreference = 'Stop'
+$ppt = $null
+try {
+  $ppt = New-Object -ComObject PowerPoint.Application
+  $pres = $ppt.Presentations.Open($InFile, $true, $false, $false)   # read-only, untitled, no window
+  $pres.Export($OutDir, 'PNG', 1920, 1080)
+  $pres.Close()
+} finally {
+  if ($ppt -ne $null) { $ppt.Quit() }
+}
+`;
+function convertWithPowerPoint(buffer, ext) {
+  return new Promise((resolve, reject) => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-ppt-'));
+    const src = path.join(workDir, 'input' + ext);
+    const outDir = path.join(workDir, 'slides');
+    const script = path.join(workDir, 'export.ps1');
+    fs.mkdirSync(outDir);
+    fs.writeFileSync(src, buffer);
+    fs.writeFileSync(script, POWERPOINT_EXPORT_SCRIPT);
+    const done = (fn, v) => { try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {} fn(v); };
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-InFile', src, '-OutDir', outDir], { timeout: 180000, windowsHide: true }, (err, stdout, stderr) => {
+      if (err) return done(reject, new Error('PowerPoint export failed: ' + ((stderr || err.message || '') + '').trim().split('\n')[0]));
+      const files = fs.readdirSync(outDir).filter((f) => /\.png$/i.test(f)).sort((a, b) => parseInt(a.match(/(\d+)/)[1], 10) - parseInt(b.match(/(\d+)/)[1], 10));
+      if (!files.length) return done(reject, new Error('PowerPoint produced no slides'));
+      done(resolve, files.map((f) => fs.readFileSync(path.join(outDir, f))));
+    });
+  });
+}
+
+// Tries each way of turning a deck into slide images, in order, and explains
+// itself when none works. The desktop app (no LibreOffice) can fall back to the
+// cloud copy, which converts the deck and sends the slide images back.
+async function convertDeckToSlideImages(buffer, ext) {
+  const failures = [];
+  if (process.platform === 'win32') {
+    try { return await convertWithPowerPoint(buffer, ext); } catch (e) { failures.push('PowerPoint: ' + e.message); }
+  }
+  try { return await convertWithLibreOffice(buffer, ext); } catch (e) { failures.push('LibreOffice: ' + e.message.replace('PowerPoint conversion failed: ', '')); }
+  if (process.env.CLOUD_URL && process.env.CLOUD_PASSWORD) {
+    try {
+      return await syncLib.convertViaCloud({ url: process.env.CLOUD_URL, password: process.env.CLOUD_PASSWORD }, buffer, ext);
+    } catch (e) { failures.push('Cloud: ' + e.message); }
+  }
+  console.error('Deck conversion failed:', failures.join(' | '));
+  throw new Error(
+    "This computer can't convert PowerPoint files by itself. Install Microsoft PowerPoint, or connect to the internet with Cloud sync set up — or in PowerPoint choose File ▸ Export ▸ PNG, then use Media ▸ Slide images to upload the pictures as a deck."
+  );
 }
 
 // ---- Schedule (persisted server-side so it's shared across every device/
