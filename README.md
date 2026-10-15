@@ -20,6 +20,7 @@ projector in real time (WebSocket-synced).
 | `SESSION_SECRET` | optional | Signs login cookies. Defaults to a key derived from the password (changing the password signs everyone out). |
 | `DATABASE_URL` | recommended | Supabase/Postgres. Without it data lives in local files and is wiped on every redeploy. |
 | `API_BIBLE_KEY` / `NLT_API_KEY` | optional | NIV/AMP/MSG via API.Bible; higher NLT limits. |
+| `SUPABASE_URL` + `PRESENTER_STORAGE_SECRET` | optional | Enables Supabase Storage for uploaded media (images, video, PowerPoint slides) via the `presenter-storage` Edge Function. Existing database-stored media is migrated automatically at boot. If unset or unavailable, media stays in Postgres. |
 | `DATA_DIR` | optional | Where file-fallback data is written (default `./data`). |
 
 ## Run it

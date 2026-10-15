@@ -9,6 +9,7 @@ const compression = require('compression');
 const { Pool } = require('pg');
 const cheerio = require('cheerio');
 const sec = require('./lib/security');
+const storage = require('./lib/storage');
 
 const app = express();
 app.set('trust proxy', 1); // Render terminates TLS in front of us — needed for real client IPs
@@ -49,7 +50,8 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const pool = DATABASE_URL
   ? new Pool({
       connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      // Supabase requires TLS; a local development database does not offer it.
+      ssl: /@(localhost|127\.0\.0\.1)[:/]/.test(DATABASE_URL) ? false : { rejectUnauthorized: false },
       max: 6,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 8000,
@@ -109,6 +111,7 @@ async function initDb() {
       payload JSONB,
       created_at TIMESTAMPTZ DEFAULT now()
     );
+    ALTER TABLE wp_media ADD COLUMN IF NOT EXISTS storage_path TEXT;
     CREATE TABLE IF NOT EXISTS wp_state (
       key TEXT PRIMARY KEY,
       value JSONB NOT NULL,
@@ -203,11 +206,31 @@ function newMediaId(prefix) {
 async function saveMediaRow({ kind, parentId, slideIndex, title, mimetype, buffer, externalUrl }) {
   const id = newMediaId(kind);
   if (pool) {
-    await pool.query(
-      `INSERT INTO wp_media (id, kind, parent_id, slide_index, title, mimetype, data, external_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [id, kind, parentId || null, slideIndex ?? null, title || null, mimetype || null, buffer || null, externalUrl || null]
-    );
+    // Prefer Supabase Storage for the bytes (public CDN, doesn't bloat Postgres
+    // or Render's memory). If Storage is down, fall back to keeping the bytes in
+    // the database so uploads never fail because of it.
+    let storagePath = null;
+    let dbBuffer = buffer || null;
+    if (buffer && storage.enabled && storage.supportedMime(mimetype)) {
+      try {
+        storagePath = storage.objectPath(id, mimetype);
+        await storage.upload([{ path: storagePath, buffer, mimetype }]);
+        dbBuffer = null;
+      } catch (e) {
+        console.error('Storage upload failed, keeping file in the database instead:', e.message);
+        storagePath = null;
+      }
+    }
+    try {
+      await pool.query(
+        `INSERT INTO wp_media (id, kind, parent_id, slide_index, title, mimetype, data, external_url, storage_path)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [id, kind, parentId || null, slideIndex ?? null, title || null, mimetype || null, dbBuffer, externalUrl || null, storagePath]
+      );
+    } catch (e) {
+      if (storagePath) await storage.removePaths([storagePath]).catch(() => {});
+      throw e;
+    }
     return id;
   }
   // Disk fallback
@@ -226,7 +249,7 @@ async function saveMediaRow({ kind, parentId, slideIndex, title, mimetype, buffe
 async function listMediaLibrary() {
   if (pool) {
     const { rows } = await pool.query(`
-      SELECT m.id, m.kind, m.title, m.mimetype, m.external_url,
+      SELECT m.id, m.kind, m.title, m.mimetype, m.external_url, m.storage_path,
         (SELECT count(*) FROM wp_media s WHERE s.parent_id = m.id) AS slide_count
       FROM wp_media m
       WHERE m.kind IN ('image','video','deck')
@@ -235,7 +258,7 @@ async function listMediaLibrary() {
     `);
     return rows.map((r) => ({
       id: r.id, kind: r.kind, title: r.title, mimetype: r.mimetype,
-      url: r.kind === 'video' && r.external_url ? r.external_url : `/api/media/file/${r.id}`,
+      url: r.storage_path ? storage.publicUrl(r.storage_path) : (r.kind === 'video' && r.external_url ? r.external_url : `/api/media/file/${r.id}`),
       external: !!(r.kind === 'video' && r.external_url),
       slideCount: Number(r.slide_count) || 0,
     }));
@@ -252,8 +275,9 @@ async function listMediaLibrary() {
 
 async function getMediaFile(id) {
   if (pool) {
-    const { rows } = await pool.query('SELECT mimetype, data, external_url FROM wp_media WHERE id = $1', [id]);
+    const { rows } = await pool.query('SELECT mimetype, data, external_url, storage_path FROM wp_media WHERE id = $1', [id]);
     if (rows.length === 0) return null;
+    if (rows[0].storage_path) return { externalUrl: storage.publicUrl(rows[0].storage_path) }; // old links keep working
     return { mimetype: rows[0].mimetype, data: rows[0].data, externalUrl: rows[0].external_url };
   }
   const data = loadMediaJson();
@@ -267,10 +291,10 @@ async function getMediaFile(id) {
 async function getDeckSlides(deckId) {
   if (pool) {
     const { rows } = await pool.query(
-      'SELECT id, slide_index FROM wp_media WHERE parent_id = $1 AND kind = $2 ORDER BY slide_index',
+      'SELECT id, slide_index, storage_path FROM wp_media WHERE parent_id = $1 AND kind = $2 ORDER BY slide_index',
       [deckId, 'deck-slide']
     );
-    return rows.map((r) => ({ id: r.id, url: `/api/media/file/${r.id}` }));
+    return rows.map((r) => ({ id: r.id, url: r.storage_path ? storage.publicUrl(r.storage_path) : `/api/media/file/${r.id}` }));
   }
   const data = loadMediaJson();
   return data.items
@@ -283,8 +307,10 @@ async function deleteMediaItem(id) {
   if (pool) {
     const { rows } = await pool.query('SELECT kind FROM wp_media WHERE id = $1', [id]);
     if (rows.length === 0) return false;
+    const { rows: stored } = await pool.query('SELECT storage_path FROM wp_media WHERE (id = $1 OR parent_id = $1) AND storage_path IS NOT NULL', [id]);
     if (rows[0].kind === 'deck') await pool.query('DELETE FROM wp_media WHERE parent_id = $1', [id]);
     const { rowCount } = await pool.query('DELETE FROM wp_media WHERE id = $1', [id]);
+    if (stored.length) storage.removePaths(stored.map((r) => r.storage_path)).catch((e) => console.error('Storage cleanup failed:', e.message));
     return rowCount > 0;
   }
   const data = loadMediaJson();
@@ -716,7 +742,7 @@ app.get('/healthz', async (req, res) => {
     } catch (e) { db = 'down'; }
   }
   res.set('Cache-Control', 'no-store');
-  res.status(db === 'down' ? 503 : 200).json({ ok: db !== 'down', db, uptime: Math.round(process.uptime()), auth: sec.AUTH_ENABLED && sec.AUTH_CONFIGURED });
+  res.status(db === 'down' ? 503 : 200).json({ ok: db !== 'down', db, storage: storage.enabled ? 'supabase' : 'database', uptime: Math.round(process.uptime()), auth: sec.AUTH_ENABLED && sec.AUTH_CONFIGURED });
 });
 
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'views', 'login.html')));
@@ -1313,11 +1339,16 @@ app.post('/api/media/pptx', uploadPptx.single('file'), async (req, res) => {
     const ext = /\.ppt$/i.test(req.file.originalname) ? '.ppt' : '.pptx';
     const slideBuffers = await runExclusive(() => convertDeckToSlideImages(req.file.buffer, ext));
     deckId = await saveMediaRow({ kind: 'deck', title, mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
-    const slides = [];
-    for (let i = 0; i < slideBuffers.length; i++) {
-      const slideId = await saveMediaRow({ kind: 'deck-slide', parentId: deckId, slideIndex: i, mimetype: 'image/png', buffer: slideBuffers[i] });
-      slides.push({ id: slideId, url: `/api/media/file/${slideId}` });
-    }
+    const slideIds = new Array(slideBuffers.length);
+    let nextSlide = 0;
+    const saveWorker = async () => { // 4 at a time — each slide is a Storage upload
+      while (nextSlide < slideBuffers.length) {
+        const i = nextSlide++;
+        slideIds[i] = await saveMediaRow({ kind: 'deck-slide', parentId: deckId, slideIndex: i, mimetype: 'image/png', buffer: slideBuffers[i] });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, slideBuffers.length) }, saveWorker));
+    const slides = slideIds.map((slideId) => ({ id: slideId, url: `/api/media/file/${slideId}` }));
     res.json({ id: deckId, kind: 'deck', title, slideCount: slides.length, slides });
   } catch (e) {
     console.error('PPTX conversion error:', e.message);
@@ -1600,6 +1631,39 @@ app.use((err, req, res, next) => {
 process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e && e.message));
 process.on('uncaughtException', (e) => console.error('uncaughtException:', e && e.message));
 
+// One-time (idempotent) move of media bytes that still live in Postgres into
+// Supabase Storage. A file's database copy is only dropped after the object has
+// been uploaded AND confirmed readable from the public bucket with the right size.
+async function migrateMediaToStorage() {
+  if (!pool || !storage.enabled) return;
+  const { rows } = await pool.query(
+    'SELECT id, mimetype FROM wp_media WHERE data IS NOT NULL AND storage_path IS NULL ORDER BY created_at LIMIT 1000'
+  );
+  const todo = rows.filter((r) => storage.supportedMime(r.mimetype));
+  if (!todo.length) return;
+  console.log(`Migrating ${todo.length} media file(s) from the database to Supabase Storage...`);
+  let moved = 0;
+  let failed = 0;
+  for (const row of todo) {
+    try {
+      const { rows: [full] } = await pool.query('SELECT data FROM wp_media WHERE id = $1', [row.id]);
+      if (!full || !full.data) continue;
+      const p = storage.objectPath(row.id, row.mimetype);
+      await storage.upload([{ path: p, buffer: full.data, mimetype: row.mimetype }]);
+      if (!(await storage.verify(p, full.data.length))) {
+        await storage.removePaths([p]).catch(() => {});
+        throw new Error('uploaded object could not be verified');
+      }
+      await pool.query('UPDATE wp_media SET storage_path = $2, data = NULL WHERE id = $1 AND storage_path IS NULL', [row.id, p]);
+      moved++;
+    } catch (e) {
+      failed++;
+      console.error(`Media migration failed for ${row.id} (left in the database):`, e.message);
+    }
+  }
+  console.log(`Media migration finished: ${moved} moved, ${failed} left in the database.`);
+}
+
 // ---------------------------------------------------------------------------
 // Boot + graceful shutdown (Render sends SIGTERM on every deploy: save the
 // current screen state first so the next instance resumes exactly where we were).
@@ -1618,7 +1682,8 @@ function listen() {
 initDb()
   .catch((e) => console.error('DB init failed, continuing with file fallback:', e.message))
   .then(restoreState)
-  .then(listen);
+  .then(listen)
+  .then(() => setTimeout(() => migrateMediaToStorage().catch((e) => console.error('Media migration error:', e.message)), 5000));
 
 let shuttingDown = false;
 async function shutdown(signal) {
