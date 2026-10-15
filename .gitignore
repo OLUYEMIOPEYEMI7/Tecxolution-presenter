@@ -1,3 +1,10 @@
 node_modules/
 .env
 *.log
+data/state.json
+data/media.json
+data/schedule.json
+data/free-texts.json
+*.tmp
+public/images/media-library/
+public/images/custom-themes/

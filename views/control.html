@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/css/presenter.css" />
 </head>
 <body class="control-body">
+  <div class="conn-banner" id="conn-banner">Connection lost — reconnecting. The projector keeps showing the last slide.</div>
   <div class="brand-strip"></div>
   <div class="control-header">
     <div class="header-brand">
@@ -20,11 +21,22 @@
         <span class="header-subtitle">RCCG Youth Province 9 &middot; Peculiar Voices</span>
       </div>
     </div>
-    <div style="display:flex; align-items:center;">
+    <div style="display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+      <a class="header-link" href="/stage" target="_blank" rel="noopener" title="Confidence monitor for the worship team / speaker">Stage Monitor ⧉</a>
+      <a class="header-link" href="/remote" target="_blank" rel="noopener" title="Control from your phone">Phone Remote ⧉</a>
+      <a class="header-link" href="/api/backup" title="Download all songs, schedule, announcements">Backup ⬇</a>
+      <a class="header-link" onclick="document.getElementById('restore-file').click()" title="Merge a backup file back in">Restore ⬆</a>
+      <a class="header-link" onclick="signOut()">Sign out</a>
+      <input type="file" id="restore-file" accept="application/json,.json" style="display:none" />
       <div class="live-indicator"><span class="live-dot" id="live-dot"></span><span id="live-text">connecting…</span></div>
+      <div class="output-bar" title="Hide the output without losing your place — B / L / C keys">
+        <button class="secondary" id="ov-black" onclick="toggleOverlay('black')">⬛ Black (B)</button>
+        <button class="secondary" id="ov-logo" onclick="toggleOverlay('logo')">Logo (L)</button>
+        <button class="secondary" id="ov-clear" onclick="toggleOverlay('clear')">Clear text (C)</button>
+      </div>
       <div class="actions">
         <button class="secondary" onclick="openDisplay()">Open Projection Screen ⧉</button>
-        <button class="danger" onclick="clearStage()">Clear / Blackout</button>
+        <button class="danger" onclick="clearStage()">Clear all</button>
       </div>
     </div>
   </div>
@@ -152,6 +164,48 @@
           <button class="secondary" onclick="saveAnnouncement()">+ Save</button>
         </div>
         <div id="announcements-list" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+      </div>
+
+      <h2 style="margin-top:24px;">⏱ Timer &amp; Alerts</h2>
+      <div class="scripture-box">
+        <div class="mini-row" style="margin-top:0;">
+          <input type="time" id="timer-at" class="mini-input" />
+          <button class="secondary" onclick="startTimerAt()" title="Count down to this clock time (today, or tomorrow if already past)">Count down to time</button>
+        </div>
+        <div class="mini-row">
+          <input type="number" id="timer-min" class="mini-input" value="10" min="1" max="600" style="width:70px" /> <span style="font-size:11px;color:#999">min</span>
+          <button class="secondary" onclick="startTimerMinutes()">Count down</button>
+          <button class="secondary" onclick="startStopwatch()">Stopwatch</button>
+          <button class="danger" onclick="stopTimer()">Stop</button>
+        </div>
+        <div class="mini-row">
+          <input type="text" id="timer-label" class="mini-input" placeholder="Label (e.g. Service starts in)" maxlength="80" style="flex:1" />
+          <label><input type="checkbox" id="timer-on-display" checked /> Take over projector screen</label>
+        </div>
+        <p id="timer-status" style="font-size:11px; color:#999; margin:6px 0 0;">No timer running</p>
+        <div class="mini-row" style="margin-top:12px;">
+          <input type="text" id="alert-text" class="mini-input" placeholder="Alert banner, e.g. Nursery: parent of Tolu please come" maxlength="200" style="flex:1" />
+        </div>
+        <div class="mini-row">
+          <input type="number" id="alert-sec" class="mini-input" value="12" min="3" max="120" style="width:70px" /> <span style="font-size:11px;color:#999">sec</span>
+          <button onclick="showAlert()">Show alert</button>
+          <button class="secondary" onclick="hideAlert()">Hide</button>
+        </div>
+      </div>
+
+      <h2 style="margin-top:24px;">🕘 Recently Shown</h2>
+      <div class="scripture-box">
+        <div id="history-list"><p style="color:#666; font-size:11px; margin:0;">Whatever you take live appears here for one-click re-use (click = stage · double-click = live).</p></div>
+      </div>
+
+      <h2 style="margin-top:24px;">🔠 Display</h2>
+      <div class="scripture-box">
+        <div class="mini-row" style="margin-top:0;">
+          <span style="font-size:12px;color:#ccc">Text size</span>
+          <input type="range" id="font-scale" min="60" max="180" step="5" value="100" style="flex:1" />
+          <span id="font-scale-val" style="font-size:12px;color:#ccc;width:42px;text-align:right">100%</span>
+        </div>
+        <p style="font-size:11px; color:#888; margin:6px 0 0;">Scales all lyric / scripture / text slides on the projector. Long slides still shrink to fit automatically.</p>
       </div>
 
       <h2 style="margin-top:24px;">🎙 Voice Detect (Beta)</h2>
@@ -334,6 +388,7 @@ He is worthy, worthy worthy
   <script src="/js/bible-books.js"></script>
   <script src="/js/bible-structure.js"></script>
   <script src="/js/voice-detect.js"></script>
+  <script src="/js/common.js"></script>
   <script src="/js/control.js"></script>
 </body>
 </html>

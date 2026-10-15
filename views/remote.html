@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<meta name="theme-color" content="#07070f" />
+<title>Presenter Remote</title>
+<link rel="stylesheet" href="/css/presenter.css" />
+</head>
+<body class="remote-body">
+  <div class="rm-head"><span><span class="rm-dot" id="rm-dot"></span><span id="rm-status">connecting…</span></span><span id="rm-ctrl"></span></div>
+
+  <div class="rm-card"><h3>On screen now</h3><div class="rm-text" id="rm-live">—</div></div>
+  <div class="rm-card"><h3>Up next</h3><div class="rm-text dim" id="rm-next">—</div></div>
+
+  <div class="rm-grid">
+    <button class="rm-btn" data-cmd="prev">◀ Previous</button>
+    <button class="rm-btn" data-cmd="next">Next ▶</button>
+  </div>
+  <div class="rm-grid"><button class="rm-btn primary" data-cmd="golive" style="grid-column: 1 / -1; font-size:20px; padding:22px;">GO LIVE</button></div>
+  <div class="rm-grid three">
+    <button class="rm-btn small" data-ov="black" id="ov-black">⬛ Black</button>
+    <button class="rm-btn small" data-ov="logo" id="ov-logo">Logo</button>
+    <button class="rm-btn small" data-ov="clear" id="ov-clear">Clear text</button>
+  </div>
+  <div class="rm-grid"><button class="rm-btn small" data-ov="none">▶ Show output</button><button class="rm-btn small" data-cmd="clear">Clear all</button></div>
+
+  <div class="rm-card">
+    <h3>Alert on screen</h3>
+    <input id="rm-alert" class="mini-input" style="width:100%" maxlength="200" placeholder="e.g. Parent of Tolu — please see the nursery" />
+    <div class="rm-grid" style="margin:8px 0 0"><button class="rm-btn small" id="rm-alert-send">Show 12s</button><button class="rm-btn small" id="rm-alert-hide">Hide</button></div>
+  </div>
+
+  <div class="rm-card"><h3>Service schedule</h3><div id="rm-sched"><div class="rm-text dim">Loading…</div></div></div>
+  <div class="rm-card"><h3>Recently shown</h3><div id="rm-hist"><div class="rm-text dim">Nothing yet</div></div></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/remote.js"></script>
+</body>
+</html>

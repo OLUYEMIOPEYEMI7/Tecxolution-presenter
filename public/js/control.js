@@ -1,3 +1,10 @@
+// Any 401 (session expired / signed out) sends the operator to the login page.
+const _fetch = window.fetch.bind(window);
+window.fetch = (...a) => _fetch(...a).then((r) => {
+  if (r.status === 401) location.href = '/login?next=' + encodeURIComponent(location.pathname);
+  return r;
+});
+
 const socket = io();
 let songs = [];
 let activeSong = null;
@@ -9,14 +16,24 @@ const MAX_RENDERED_SONGS = 150;
 const liveDot = document.getElementById('live-dot');
 const liveText = document.getElementById('live-text');
 
+const connBanner = document.getElementById('conn-banner');
 socket.on('connect', () => {
   liveDot.classList.add('on');
   liveText.textContent = 'connected';
+  connBanner.classList.remove('on');
+  socket.emit('hello', 'control');
+  window.syncServerTime(socket);
 });
 socket.on('disconnect', () => {
   liveDot.classList.remove('on');
   liveText.textContent = 'disconnected';
+  connBanner.classList.add('on');
 });
+socket.on('auth-error', () => { location.href = '/login?next=/control'; });
+
+function signOut() {
+  fetch('/api/logout', { method: 'POST' }).finally(() => { location.href = '/login'; });
+}
 
 function reloadSongs() {
   const params = new URLSearchParams();
@@ -74,7 +91,7 @@ function renderSongList() {
       ? `<span onclick="event.stopPropagation(); openEditSongModal('${song.id}')" style="float:right; color:#999; font-size:12px; cursor:pointer; margin-right:8px;" title="Edit title, artist, or lyrics">✎</span>`
       : '';
     const schedBtn = `<span onclick="event.stopPropagation(); addWholeSongToSchedule('${song.id}')" class="song-sched-btn" title="Add this whole song to Today's Schedule">+ Sched</span>`;
-    div.innerHTML = `<div class="song-title">${song.title}${badge}${editBtn}${delBtn}</div><div class="song-artist">${song.artist || ''}${schedBtn}</div>`;
+    div.innerHTML = `<div class="song-title">${escapeHtmlLocal(song.title)}${badge}${editBtn}${delBtn}</div><div class="song-artist">${escapeHtmlLocal(song.artist || '')}${schedBtn}</div>`;
     div.onclick = () => selectSong(song);
     container.appendChild(div);
   });
@@ -112,6 +129,7 @@ function selectSong(song) {
       }
       activeSong = full;
       currentSongSections = full.sections;
+      scriptureChunks = [];
       currentSectionIndex = -1;
       currentDeckSlides = [];
       currentDeckIndex = -1;
@@ -123,7 +141,7 @@ function selectSong(song) {
         const previewText = section.pairs.map((p) => p[0]).join(' ').slice(0, 70);
         div.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div style="flex:1;"><div class="slide-label">${section.label}</div><div class="slide-preview">${previewText}…</div></div>
+            <div style="flex:1;"><div class="slide-label">${escapeHtmlLocal(section.label)}</div><div class="slide-preview">${escapeHtmlLocal(previewText)}…</div></div>
             <span onclick="event.stopPropagation(); addSongSlideToSchedule('${full.id}', ${idx})" style="font-size:10px; color:#888; border:1px solid #444; border-radius:4px; padding:2px 6px; margin-left:8px; white-space:nowrap;">+ Sched</span>
           </div>`;
         div.onclick = () => {
@@ -151,12 +169,16 @@ function highlightActiveSlide() {
 }
 
 function sectionToState(song, section) {
+  // "next" feeds the Stage Monitor and the phone remote (what's coming up).
+  const idx = song.sections.indexOf(section);
+  const upcoming = idx >= 0 ? song.sections[idx + 1] : null;
   return {
     type: 'song',
     label: section.label,
     pairs: section.pairs,
     finale: section.finale || null,
     background: section.background,
+    next: upcoming ? [upcoming.label + ':', ...upcoming.pairs.slice(0, 3).map((p) => p[0])] : [],
     _displayTitle: `${song.title} — ${section.label}`,
   };
 }
@@ -313,6 +335,10 @@ function finishSavingTheme(name, css) {
 }
 
 function nextSlide() {
+  if (scriptureChunks.length > 1) {
+    if (scriptureChunkIndex < scriptureChunks.length - 1) { scriptureChunkIndex++; stageScriptureChunk(); }
+    return;
+  }
   if (currentDeckSlides.length) {
     if (currentDeckIndex < currentDeckSlides.length - 1) {
       currentDeckIndex++;
@@ -330,6 +356,10 @@ function nextSlide() {
 }
 
 function prevSlide() {
+  if (scriptureChunks.length > 1) {
+    if (scriptureChunkIndex > 0) { scriptureChunkIndex--; stageScriptureChunk(); }
+    return;
+  }
   if (currentDeckSlides.length) {
     if (currentDeckIndex > 0) {
       currentDeckIndex--;
@@ -353,6 +383,12 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') { prevSlide(); e.preventDefault(); }
   else if (e.key === 'Enter' || e.key === ' ') { goLive(); e.preventDefault(); }
   else if (e.key === 'Escape') { clearStage(); e.preventDefault(); }
+  else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'b') { toggleOverlay('black'); e.preventDefault(); }
+    else if (k === 'l') { toggleOverlay('logo'); e.preventDefault(); }
+    else if (k === 'c') { toggleOverlay('clear'); e.preventDefault(); }
+  }
 });
 
 function getSelectedBibleVersion() {
@@ -375,6 +411,60 @@ fetch('/api/bible-versions')
     sel.value = 'kjv';
   });
 
+// Long passages (a whole chapter, or a verse range) are split into several
+// readable slides, navigated with the arrow keys — instead of shrinking
+// everything to fit one unreadable screen.
+var scriptureChunks = [];
+let scriptureChunkIndex = -1;
+const SCRIPTURE_CHUNK_CHARS = 330;
+
+function buildScriptureChunks(ref, data) {
+  const single = [{ reference: data.reference, text: data.text }];
+  if (!Array.isArray(data.verses) || data.verses.length < 2) return single;
+  const m = ref.match(/^(.+?)\s+(\d+)\s*(?::|$)/);
+  const base = m ? m[1].replace(/\s+/g, ' ').trim() + ' ' + m[2] : data.reference;
+  const groups = [];
+  let cur = [];
+  let len = 0;
+  data.verses.forEach((v) => {
+    if (cur.length && len + v.text.length > SCRIPTURE_CHUNK_CHARS) { groups.push(cur); cur = []; len = 0; }
+    cur.push(v);
+    len += v.text.length + 1;
+  });
+  if (cur.length) groups.push(cur);
+  if (groups.length === 1) return single;
+  return groups.map((g) => ({
+    reference: `${base}:${g[0].n}${g.length > 1 ? '-' + g[g.length - 1].n : ''}`,
+    text: g.map((v) => (g.length > 1 ? v.n + ' ' : '') + v.text).join(' '),
+  }));
+}
+
+function stageScriptureChunk() {
+  const c = scriptureChunks[scriptureChunkIndex];
+  const nextC = scriptureChunks[scriptureChunkIndex + 1];
+  stageState({
+    type: 'scripture',
+    reference: c.reference,
+    text: c.text,
+    translation: scriptureChunkTranslation,
+    background: null,
+    next: nextC ? [nextC.reference, nextC.text.slice(0, 140) + (nextC.text.length > 140 ? '…' : '')] : [],
+    label: scriptureChunks.length > 1 ? `Part ${scriptureChunkIndex + 1} of ${scriptureChunks.length}` : '',
+  });
+}
+let scriptureChunkTranslation = '';
+
+function stageScriptureResult(ref, data, thenGoLive) {
+  currentSongSections = []; scriptureChunks = [];
+  currentDeckSlides = [];
+  scriptureChunks = buildScriptureChunks(ref, data);
+  scriptureChunkIndex = 0;
+  scriptureChunkTranslation = data.translation;
+  stageScriptureChunk();
+  if (thenGoLive) goLive();
+  return scriptureChunks.length;
+}
+
 function stageScripture(thenGoLive) {
   const ref = document.getElementById('scripture-input').value.trim();
   if (!ref) return;
@@ -387,16 +477,9 @@ function stageScripture(thenGoLive) {
         statusEl.textContent = 'Not found: ' + data.error;
         return;
       }
-      statusEl.textContent = thenGoLive ? 'Live: ' + data.reference : 'Staged: ' + data.reference + ' (click GO LIVE)';
-      currentSongSections = [];
-      stageState({
-        type: 'scripture',
-        reference: data.reference,
-        text: data.text,
-        translation: data.translation,
-        background: null,
-      });
-      if (thenGoLive) goLive();
+      const parts = stageScriptureResult(ref, data, thenGoLive);
+      const extra = parts > 1 ? ` — ${parts} slides, use ← → to move through` : '';
+      statusEl.textContent = (thenGoLive ? 'Live: ' : 'Staged: ') + data.reference + (thenGoLive ? '' : ' (click GO LIVE)') + extra;
     })
     .catch((e) => {
       statusEl.textContent = 'Error: ' + e.message;
@@ -604,7 +687,7 @@ function selectBibleBrowserVerse(num, thenGoLive) {
 function stageFreeText(thenGoLive) {
   const text = document.getElementById('free-text-input').value.trim();
   if (!text) return;
-  currentSongSections = [];
+  currentSongSections = []; scriptureChunks = [];
   stageState({ type: 'free-text', text, background: null });
   if (thenGoLive) goLive();
 }
@@ -828,7 +911,7 @@ function addDeckToSchedule(item) {
 
 function loadScheduleItem(item, thenGoLive) {
   if (item.stateType === 'song') {
-    currentSongSections = [];
+    currentSongSections = []; scriptureChunks = [];
     currentDeckSlides = [];
     stageState(item.state);
     if (thenGoLive) goLive();
@@ -860,29 +943,26 @@ function loadScheduleItem(item, thenGoLive) {
           return;
         }
         statusEl.textContent = 'Staged: ' + data.reference;
-        currentSongSections = [];
-        currentDeckSlides = [];
-        stageState({ type: 'scripture', reference: data.reference, text: data.text, translation: data.translation, background: null });
-        if (thenGoLive) goLive();
+        stageScriptureResult(item.ref, data, thenGoLive);
       });
   } else if (item.stateType === 'media-image') {
-    currentSongSections = [];
+    currentSongSections = []; scriptureChunks = [];
     currentDeckSlides = [];
     stageState({ type: 'image', url: item.url });
     if (thenGoLive) goLive();
   } else if (item.stateType === 'free-text') {
-    currentSongSections = [];
+    currentSongSections = []; scriptureChunks = [];
     currentDeckSlides = [];
     document.getElementById('free-text-input').value = item.text || '';
     stageState({ type: 'free-text', text: item.text, background: null });
     if (thenGoLive) goLive();
   } else if (item.stateType === 'media-video') {
-    currentSongSections = [];
+    currentSongSections = []; scriptureChunks = [];
     currentDeckSlides = [];
     stageState({ type: 'video', url: item.url });
     if (thenGoLive) goLive();
   } else if (item.stateType === 'media-deck') {
-    currentSongSections = [];
+    currentSongSections = []; scriptureChunks = [];
     document.querySelectorAll('.schedule-item').forEach((el) => el.classList.remove('active'));
     loadDeckIntoSlidePanel(item.deckId, thenGoLive);
   }
@@ -1200,7 +1280,7 @@ function renderLyricsPreview() {
   preview.innerHTML = `<div style="font-size:11px; color:#777; margin-bottom:8px;">${sections.length} slide${sections.length === 1 ? '' : 's'} will be created:</div>` +
     sections.map((s, i) => {
       const firstLine = (s.pairs[0] && s.pairs[0][0]) || '';
-      return `<span class="preview-slide-chip"><span class="chip-num">${i + 1}</span><span class="chip-label">${s.label}</span><span class="chip-text">${escapeHtmlLocal(firstLine).slice(0, 36)}${firstLine.length > 36 ? '…' : ''}</span></span>`;
+      return `<span class="preview-slide-chip"><span class="chip-num">${i + 1}</span><span class="chip-label">${escapeHtmlLocal(s.label)}</span><span class="chip-text">${escapeHtmlLocal(firstLine).slice(0, 36)}${firstLine.length > 36 ? '…' : ''}</span></span>`;
     }).join('');
 }
 
@@ -1378,3 +1458,123 @@ function deleteAnnouncement(id) {
     .then((r) => r.json())
     .then(() => loadAnnouncementsList());
 }
+
+
+// ================= Output overlays: Black / Logo / Clear text =================
+// Hide the screen instantly WITHOUT losing the live slide — press again to bring
+// the same slide straight back. (B / L / C keys, also on the phone remote.)
+let currentOverlay = 'none';
+function toggleOverlay(mode) {
+  socket.emit('overlay', currentOverlay === mode ? 'none' : mode);
+}
+socket.on('overlay-state', (mode) => {
+  currentOverlay = mode || 'none';
+  ['black', 'logo', 'clear'].forEach((m) => {
+    const b = document.getElementById('ov-' + m);
+    if (b) b.classList.toggle('active', currentOverlay === m);
+  });
+});
+
+// ================= Timer (countdown / stopwatch) & alerts =================
+function sendTimer(t) { socket.emit('timer-set', t); }
+function timerCommon() {
+  return {
+    label: document.getElementById('timer-label').value.trim(),
+    onDisplay: document.getElementById('timer-on-display').checked,
+  };
+}
+function startTimerAt() {
+  const v = document.getElementById('timer-at').value;
+  if (!v) { alert('Pick a time first (e.g. when the service starts).'); return; }
+  const [h, m] = v.split(':').map(Number);
+  const target = new Date();
+  target.setHours(h, m, 0, 0);
+  if (target.getTime() <= Date.now()) target.setDate(target.getDate() + 1);
+  sendTimer({ active: true, mode: 'down', target: serverNow() + (target.getTime() - Date.now()), ...timerCommon() });
+}
+function startTimerMinutes() {
+  const mins = Math.max(1, Math.min(600, Number(document.getElementById('timer-min').value) || 10));
+  sendTimer({ active: true, mode: 'down', target: serverNow() + mins * 60000, ...timerCommon() });
+}
+function startStopwatch() { sendTimer({ active: true, mode: 'up', target: serverNow(), ...timerCommon() }); }
+function stopTimer() { sendTimer({ active: false, target: 0 }); }
+
+let ctlTimer = { active: false };
+socket.on('timer-state', (t) => { ctlTimer = t || { active: false }; drawCtlTimer(); });
+function drawCtlTimer() {
+  const el = document.getElementById('timer-status');
+  if (!el) return;
+  if (!ctlTimer.active) { el.textContent = 'No timer running'; return; }
+  const diff = ctlTimer.mode === 'up' ? serverNow() - ctlTimer.target : ctlTimer.target - serverNow();
+  el.textContent = (ctlTimer.mode === 'up' ? 'Stopwatch ' : 'Countdown ') + window.formatClock(Math.max(0, diff)) +
+    (ctlTimer.onDisplay ? ' · showing on projector' : ' · stage monitor only');
+}
+setInterval(drawCtlTimer, 500);
+
+function showAlert() {
+  const text = document.getElementById('alert-text').value.trim();
+  if (!text) return;
+  socket.emit('alert-show', { text, seconds: Number(document.getElementById('alert-sec').value) || 12 });
+}
+function hideAlert() { socket.emit('alert-show', { text: '' }); }
+
+// ================= Recently shown =================
+socket.on('history', (list) => {
+  const el = document.getElementById('history-list');
+  window._history = list || [];
+  if (!window._history.length) return;
+  el.innerHTML = '';
+  window._history.forEach((h) => {
+    const div = document.createElement('div');
+    div.className = 'history-item';
+    div.innerHTML = `<span>${escapeHtmlLocal(h.title)}</span><span style="color:#666">${new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
+    div.title = 'Click to stage · double-click to go live';
+    div.onclick = () => { currentSongSections = []; scriptureChunks = []; stageState(h.state); };
+    div.ondblclick = () => { currentSongSections = []; scriptureChunks = []; stageState(h.state); goLive(); };
+    el.appendChild(div);
+  });
+});
+
+// ================= Text size =================
+const fontScaleEl = document.getElementById('font-scale');
+let fontScaleDebounce = null;
+fontScaleEl.addEventListener('input', () => {
+  document.getElementById('font-scale-val').textContent = fontScaleEl.value + '%';
+  clearTimeout(fontScaleDebounce);
+  fontScaleDebounce = setTimeout(() => socket.emit('settings-update', { fontScale: Number(fontScaleEl.value) / 100 }), 150);
+});
+socket.on('settings-state', (st) => {
+  const pct = Math.round(((st && st.fontScale) || 1) * 100);
+  fontScaleEl.value = pct;
+  document.getElementById('font-scale-val').textContent = pct + '%';
+});
+
+// ================= Phone remote commands =================
+socket.on('remote-cmd', (c) => {
+  if (c.cmd === 'next') nextSlide();
+  else if (c.cmd === 'prev') prevSlide();
+  else if (c.cmd === 'golive') goLive();
+  else if (c.cmd === 'clear') clearStage();
+  else if (c.cmd === 'schedule') {
+    const item = schedule.find((s) => s.id === c.id);
+    if (item) loadScheduleItem(item, c.live);
+  }
+});
+
+// ================= Restore from backup =================
+document.getElementById('restore-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  file.text().then((txt) => {
+    let body;
+    try { body = JSON.parse(txt); } catch (x) { alert('That is not a valid backup file.'); return; }
+    return fetch('/api/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) { alert('Restore failed: ' + d.error); return; }
+        alert(`Restored: ${d.added.songs} songs, ${d.added.announcements} announcements, ${d.added.freeTexts} saved texts added (existing data was left untouched).`);
+        reloadSongs(); loadAnnouncementsList(); loadFreeTextsList();
+      });
+  });
+});

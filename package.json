@@ -1,10 +1,11 @@
 {
   "name": "worship-presenter",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Real-time worship projection software: control room, projector output, stage monitor and phone remote.",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "keywords": [],
   "author": "",
@@ -12,10 +13,17 @@
   "type": "commonjs",
   "dependencies": {
     "cheerio": "^1.2.0",
+    "compression": "^1.8.2",
     "express": "^5.2.1",
     "multer": "^2.4.0",
     "p-limit": "^7.3.3",
     "pg": "^8.23.1",
     "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

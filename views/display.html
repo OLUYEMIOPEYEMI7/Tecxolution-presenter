@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
 <title>Live Projection</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -30,12 +31,15 @@
       <img src="/images/brand/rccg-logo.png" alt="" />
       <img src="/images/brand/yp9-logo.png" alt="" />
     </div>
+    <div class="timer-overlay" id="timer-overlay"><div class="timer-label" id="timer-label"></div><div class="timer-digits" id="timer-digits">00:00</div></div>
+    <div class="alert-banner" id="alert-banner"></div>
     <div class="ticker-bar" id="ticker-bar">
       <div class="ticker-text" id="ticker-text"></div>
     </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
   <script src="/js/display.js"></script>
 </body>
 </html>

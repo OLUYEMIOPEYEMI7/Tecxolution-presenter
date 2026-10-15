@@ -5,24 +5,60 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const multer = require('multer');
+const compression = require('compression');
 const { Pool } = require('pg');
 const cheerio = require('cheerio');
+const sec = require('./lib/security');
 
 const app = express();
+app.set('trust proxy', 1); // Render terminates TLS in front of us — needed for real client IPs
+app.disable('x-powered-by');
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  pingInterval: 10000, // notice a dead projector/control link within ~25s, not minutes
+  pingTimeout: 15000,
+  maxHttpBufferSize: 256 * 1024,
+});
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+app.use(sec.securityHeaders);
+app.use(compression());
+app.use(express.json({ limit: '512kb' }));
+app.use(sec.sameOriginWrites);
+
+// Mutable data (custom songs, schedule, media metadata, saved state) lives in
+// DATA_DIR when the database is unavailable; read-only datasets (hymnals) stay
+// in ./data. Keeping them apart lets tests and local runs avoid touching the repo.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+fs.mkdirSync(DATA_DIR, { recursive: true });
+function readJsonFile(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; }
+}
+function writeJsonFile(file, data) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, file); // atomic — a crash mid-write can't corrupt the file
+}
 
 // ---------------------------------------------------------------------------
-// Persistent storage: if DATABASE_URL is set (shared Render Postgres reused
-// from the Academy project), custom songs / announcements / uploaded theme
-// images survive redeploys. Without it, falls back to local JSON files + disk
-// (fine for local dev, but wiped on every Render redeploy).
+// Persistent storage: if DATABASE_URL is set (Supabase Postgres), custom songs /
+// announcements / uploaded media / the service schedule AND the live screen
+// state survive redeploys and free-tier sleep. Without it, falls back to local
+// JSON files + disk (fine for local dev, wiped on every Render redeploy).
 // ---------------------------------------------------------------------------
 const DATABASE_URL = process.env.DATABASE_URL;
-const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
+const pool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+      max: 6,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 8000,
+      keepAlive: true,
+    })
+  : null;
+// An idle pooled connection being dropped by Supabase must NEVER crash the
+// process (an unhandled 'error' event on the pool does exactly that).
+if (pool) pool.on('error', (e) => console.error('Postgres pool error (ignored, will reconnect):', e.message));
 
 async function initDb() {
   if (!pool) {
@@ -73,8 +109,44 @@ async function initDb() {
       payload JSONB,
       created_at TIMESTAMPTZ DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS wp_state (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS wp_media_parent_idx ON wp_media (parent_id, slide_index);
+    CREATE INDEX IF NOT EXISTS wp_media_kind_created_idx ON wp_media (kind, created_at DESC);
+    CREATE INDEX IF NOT EXISTS wp_schedule_idx_idx ON wp_schedule (idx);
+    -- These tables are only ever touched by this server (direct Postgres
+    -- connection). RLS with no policies keeps them closed to the public
+    -- Supabase REST API / anon key.
+    ALTER TABLE wp_custom_songs ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE wp_announcements ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE wp_free_texts ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE wp_theme_images ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE wp_media ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE wp_schedule ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE wp_state ENABLE ROW LEVEL SECURITY;
   `);
   console.log('Connected to persistent Postgres storage.');
+}
+
+// Uploads are checked by their actual bytes — the browser-supplied mimetype is
+// trivially spoofed (an .html named .png would otherwise be served back).
+function sniffImageMime(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.slice(0, 4).toString('latin1') === 'GIF8') return 'image/gif';
+  if (buf.slice(0, 4).toString('latin1') === 'RIFF' && buf.slice(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+const looksLikeImage = (buf) => !!sniffImageMime(buf);
+function sniffVideoMime(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf.slice(4, 8).toString('latin1') === 'ftyp') return 'video/mp4';
+  if (buf.slice(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return 'video/webm';
+  return null;
 }
 
 const customThemeImageDir = path.join(__dirname, 'public', 'images', 'custom-themes');
@@ -102,7 +174,7 @@ const uploadMediaImage = multer({
 });
 const uploadMediaVideo = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 60 * 1024 * 1024 }, // 60MB — for longer clips, paste a link instead
+  limits: { fileSize: 40 * 1024 * 1024 }, // 40MB — for longer clips, paste a link instead (keeps the 512MB free instance from running out of memory)
   fileFilter: (req, file, cb) => cb(null, /^video\//.test(file.mimetype)),
 });
 const uploadPptx = multer({
@@ -117,15 +189,10 @@ const uploadPptx = multer({
 
 const mediaDiskDir = path.join(__dirname, 'public', 'images', 'media-library');
 fs.mkdirSync(mediaDiskDir, { recursive: true });
-const mediaJsonPath = path.join(__dirname, 'data', 'media.json');
+const mediaJsonPath = path.join(DATA_DIR, 'media.json');
 
-function loadMediaJson() {
-  if (!fs.existsSync(mediaJsonPath)) return { items: [] };
-  return JSON.parse(fs.readFileSync(mediaJsonPath, 'utf8'));
-}
-function saveMediaJson(data) {
-  fs.writeFileSync(mediaJsonPath, JSON.stringify(data, null, 2));
-}
+function loadMediaJson() { return readJsonFile(mediaJsonPath, { items: [] }); }
+function saveMediaJson(data) { writeJsonFile(mediaJsonPath, data); }
 
 function newMediaId(prefix) {
   return prefix + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -294,14 +361,9 @@ prs.save(sys.argv[2])
 // ---- Schedule (persisted server-side so it's shared across every device/
 // browser that opens the control room, and so it can be built ahead of time
 // — e.g. the night before a service — not just from the operator's own machine) ----
-const schedulePath = path.join(__dirname, 'data', 'schedule.json');
-function loadScheduleJson() {
-  if (!fs.existsSync(schedulePath)) return { items: [] };
-  return JSON.parse(fs.readFileSync(schedulePath, 'utf8'));
-}
-function saveScheduleJson(data) {
-  fs.writeFileSync(schedulePath, JSON.stringify(data, null, 2));
-}
+const schedulePath = path.join(DATA_DIR, 'schedule.json');
+function loadScheduleJson() { return readJsonFile(schedulePath, { items: [] }); }
+function saveScheduleJson(data) { writeJsonFile(schedulePath, data); }
 
 async function loadScheduleList() {
   if (pool) {
@@ -360,19 +422,19 @@ async function reorderScheduleRows(orderedIds) {
   saveScheduleJson(data);
 }
 
-const songsPath = path.join(__dirname, 'data', 'songs.json');
+const songsPath = path.join(DATA_DIR, 'songs.json');
 const hymnsPath = path.join(__dirname, 'data', 'hymns.json');
-const announcementsPath = path.join(__dirname, 'data', 'announcements.json');
-const freeTextsPath = path.join(__dirname, 'data', 'free-texts.json');
+const announcementsPath = path.join(DATA_DIR, 'announcements.json');
+const freeTextsPath = path.join(DATA_DIR, 'free-texts.json');
+const statePath = path.join(DATA_DIR, 'state.json');
 const rccgHymnalPath = path.join(__dirname, 'data', 'rccg-hymnal.json');
 
-function loadHymns() {
-  return JSON.parse(fs.readFileSync(hymnsPath, 'utf8'));
-}
-
-function loadRccgHymnal() {
-  return JSON.parse(fs.readFileSync(rccgHymnalPath, 'utf8'));
-}
+// The two bundled hymnals never change at runtime — parse each once, not on
+// every cache rebuild (the RCCG file alone is several MB of JSON).
+let hymnsMemo = null;
+let rccgMemo = null;
+function loadHymns() { return hymnsMemo || (hymnsMemo = JSON.parse(fs.readFileSync(hymnsPath, 'utf8'))); }
+function loadRccgHymnal() { return rccgMemo || (rccgMemo = JSON.parse(fs.readFileSync(rccgHymnalPath, 'utf8'))); }
 
 function slugify(title) {
   return 'song-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
@@ -389,9 +451,7 @@ async function loadCustomSongs() {
       // fall through to file fallback below
     }
   }
-  if (!fs.existsSync(songsPath)) return [];
-  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
-  return data.songs;
+  return readJsonFile(songsPath, { songs: [] }).songs;
 }
 
 async function addCustomSong(song) {
@@ -401,9 +461,9 @@ async function addCustomSong(song) {
     ]);
     return;
   }
-  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+  const data = readJsonFile(songsPath, { songs: [] });
   data.songs.push(song);
-  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
+  writeJsonFile(songsPath, data);
 }
 
 async function deleteCustomSong(id) {
@@ -411,10 +471,10 @@ async function deleteCustomSong(id) {
     const { rowCount } = await pool.query('DELETE FROM wp_custom_songs WHERE id = $1', [id]);
     return rowCount > 0;
   }
-  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+  const data = readJsonFile(songsPath, { songs: [] });
   const before = data.songs.length;
   data.songs = data.songs.filter((s) => s.id !== id);
-  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
+  writeJsonFile(songsPath, data);
   return data.songs.length < before;
 }
 
@@ -426,13 +486,13 @@ async function updateCustomSong(id, { title, artist, sections }) {
     );
     return rowCount > 0;
   }
-  const data = JSON.parse(fs.readFileSync(songsPath, 'utf8'));
+  const data = readJsonFile(songsPath, { songs: [] });
   const song = data.songs.find((s) => s.id === id);
   if (!song) return false;
   song.title = title;
   song.artist = artist;
   song.sections = sections;
-  fs.writeFileSync(songsPath, JSON.stringify(data, null, 2));
+  writeJsonFile(songsPath, data);
   return true;
 }
 
@@ -446,8 +506,7 @@ async function loadAnnouncementsList() {
       console.error('DB read failed for announcements, falling back to local file:', e.message);
     }
   }
-  if (!fs.existsSync(announcementsPath)) return [];
-  return JSON.parse(fs.readFileSync(announcementsPath, 'utf8')).announcements;
+  return readJsonFile(announcementsPath, { announcements: [] }).announcements;
 }
 
 async function addAnnouncementItem(text) {
@@ -456,9 +515,9 @@ async function addAnnouncementItem(text) {
     await pool.query('INSERT INTO wp_announcements (id, text) VALUES ($1, $2)', [newItem.id, newItem.text]);
     return newItem;
   }
-  const data = fs.existsSync(announcementsPath) ? JSON.parse(fs.readFileSync(announcementsPath, 'utf8')) : { announcements: [] };
+  const data = readJsonFile(announcementsPath, { announcements: [] });
   data.announcements.push(newItem);
-  fs.writeFileSync(announcementsPath, JSON.stringify(data, null, 2));
+  writeJsonFile(announcementsPath, data);
   return newItem;
 }
 
@@ -467,10 +526,10 @@ async function deleteAnnouncementItem(id) {
     const { rowCount } = await pool.query('DELETE FROM wp_announcements WHERE id = $1', [id]);
     return rowCount > 0;
   }
-  const data = fs.existsSync(announcementsPath) ? JSON.parse(fs.readFileSync(announcementsPath, 'utf8')) : { announcements: [] };
+  const data = readJsonFile(announcementsPath, { announcements: [] });
   const before = data.announcements.length;
   data.announcements = data.announcements.filter((a) => a.id !== id);
-  fs.writeFileSync(announcementsPath, JSON.stringify(data, null, 2));
+  writeJsonFile(announcementsPath, data);
   return data.announcements.length < before;
 }
 
@@ -485,8 +544,7 @@ async function loadFreeTextsList() {
       console.error('DB read failed for free texts, falling back to local file:', e.message);
     }
   }
-  if (!fs.existsSync(freeTextsPath)) return [];
-  return JSON.parse(fs.readFileSync(freeTextsPath, 'utf8')).items;
+  return readJsonFile(freeTextsPath, { items: [] }).items;
 }
 
 async function addFreeTextItem(text) {
@@ -495,9 +553,9 @@ async function addFreeTextItem(text) {
     await pool.query('INSERT INTO wp_free_texts (id, text) VALUES ($1, $2)', [newItem.id, newItem.text]);
     return newItem;
   }
-  const data = fs.existsSync(freeTextsPath) ? JSON.parse(fs.readFileSync(freeTextsPath, 'utf8')) : { items: [] };
+  const data = readJsonFile(freeTextsPath, { items: [] });
   data.items.push(newItem);
-  fs.writeFileSync(freeTextsPath, JSON.stringify(data, null, 2));
+  writeJsonFile(freeTextsPath, data);
   return newItem;
 }
 
@@ -506,16 +564,16 @@ async function deleteFreeTextItem(id) {
     const { rowCount } = await pool.query('DELETE FROM wp_free_texts WHERE id = $1', [id]);
     return rowCount > 0;
   }
-  const data = fs.existsSync(freeTextsPath) ? JSON.parse(fs.readFileSync(freeTextsPath, 'utf8')) : { items: [] };
+  const data = readJsonFile(freeTextsPath, { items: [] });
   const before = data.items.length;
   data.items = data.items.filter((a) => a.id !== id);
-  fs.writeFileSync(freeTextsPath, JSON.stringify(data, null, 2));
+  writeJsonFile(freeTextsPath, data);
   return data.items.length < before;
 }
 
 // ---- Theme images (persistent: stored as bytes in Postgres; falls back to disk) ----
 async function saveThemeImage(buffer, mimetype, originalname) {
-  const ext = path.extname(originalname) || '.jpg';
+  const ext = (path.extname(originalname).toLowerCase().match(/^\.(jpe?g|png|gif|webp)$/) || ['.jpg'])[0];
   const id = 'theme-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   if (pool) {
     await pool.query('INSERT INTO wp_theme_images (id, filename, mimetype, data) VALUES ($1, $2, $3, $4)', [
@@ -552,18 +610,166 @@ async function getAllSongsFull() {
   return songCache || (await buildSongCache());
 }
 
-// Two independent states: liveState is what the audience sees, previewState
-// is staged but not yet visible. They're broadcast on separate socket events
-// so the Preview and Live iframes (both /display, same rendering code) stay
-// perfectly proportional to each other — Preview is a true miniature of Live,
-// not an approximation.
+// ---------------------------------------------------------------------------
+// Live output state. Preview and Live are two independent states broadcast on
+// separate socket events so the Preview and Live iframes (both /display, same
+// rendering code) stay perfectly proportional — Preview is a true miniature.
+// Everything here is persisted (debounced) so a Render restart / free-tier
+// sleep / redeploy comes back showing exactly what was on screen.
+// ---------------------------------------------------------------------------
 let liveState = { type: 'blank' };
 let previewState = { type: 'blank' };
 let tickerState = { active: false, text: '' };
+let overlayMode = 'none'; // none | black | logo | clear  (hides output without losing the live slide)
+let timerState = { active: false, mode: 'down', target: 0, label: '', onDisplay: false };
+let settingsState = { fontScale: 1 };
+let alertState = { text: '', until: 0 };
+let history = []; // recently shown items, newest first
+let alertTimer = null;
 
-app.get('/control', (req, res) => res.sendFile(path.join(__dirname, 'views', 'control.html')));
+function titleOf(st) {
+  if (!st) return '';
+  if (st._displayTitle) return st._displayTitle;
+  if (st.type === 'scripture') return st.reference + (st.translation ? ' (' + st.translation + ')' : '');
+  if (st.type === 'free-text') return (st.text || '').slice(0, 40);
+  if (st.type === 'image') return 'Image';
+  if (st.type === 'video') return 'Video';
+  return st.type;
+}
+function pushHistory(st) {
+  if (!st || st.type === 'blank') return;
+  const key = JSON.stringify([st.type, st._displayTitle, st.reference, st.text, st.url, st.pairs]);
+  history = history.filter((h) => h.key !== key);
+  history.unshift({ key, title: titleOf(st), at: Date.now(), state: st });
+  history = history.slice(0, 15);
+}
+
+let persistTimer = null;
+function persistState() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(flushState, 400);
+}
+async function flushState() {
+  clearTimeout(persistTimer);
+  const snapshot = { liveState, previewState, tickerState, overlayMode, timerState, settingsState, history };
+  try {
+    if (pool) {
+      await pool.query(
+        `INSERT INTO wp_state (key, value, updated_at) VALUES ('main', $1, now())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [JSON.stringify(snapshot)]
+      );
+    } else {
+      writeJsonFile(statePath, snapshot);
+    }
+  } catch (e) {
+    console.error('Could not persist live state:', e.message);
+  }
+}
+async function restoreState() {
+  try {
+    let snap = null;
+    if (pool) {
+      const { rows } = await pool.query("SELECT value FROM wp_state WHERE key = 'main'");
+      snap = rows[0] && rows[0].value;
+    } else {
+      snap = readJsonFile(statePath, null);
+    }
+    if (!snap) return;
+    liveState = sec.sanitizeState(snap.liveState) || liveState;
+    previewState = sec.sanitizeState(snap.previewState) || previewState;
+    if (snap.tickerState) tickerState = { active: !!snap.tickerState.active, text: sec.str(snap.tickerState.text, 600) };
+    if (['none', 'black', 'logo', 'clear'].includes(snap.overlayMode)) overlayMode = snap.overlayMode;
+    if (snap.timerState) timerState = cleanTimer(snap.timerState);
+    if (snap.settingsState) settingsState = cleanSettings(snap.settingsState);
+    if (Array.isArray(snap.history)) history = snap.history.filter((h) => h && h.state && sec.sanitizeState(h.state)).slice(0, 15);
+    console.log('Restored last live screen state.');
+  } catch (e) {
+    console.error('Could not restore live state:', e.message);
+  }
+}
+
+function cleanTimer(t) {
+  const target = Number(t && t.target);
+  return {
+    active: !!(t && t.active) && Number.isFinite(target) && target > 0,
+    mode: t && t.mode === 'up' ? 'up' : 'down',
+    target: Number.isFinite(target) ? target : 0,
+    label: sec.str(t && t.label, 80),
+    onDisplay: !!(t && t.onDisplay),
+  };
+}
+function cleanSettings(s) {
+  const fs_ = Number(s && s.fontScale);
+  return { fontScale: Number.isFinite(fs_) ? Math.min(1.8, Math.max(0.6, fs_)) : 1 };
+}
+
+// ---------------------------------------------------------------------------
+// Public pages & auth
+// ---------------------------------------------------------------------------
+app.get('/healthz', async (req, res) => {
+  let db = 'none';
+  if (pool) {
+    try {
+      await Promise.race([pool.query('SELECT 1'), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 2500))]);
+      db = 'up';
+    } catch (e) { db = 'down'; }
+  }
+  res.set('Cache-Control', 'no-store');
+  res.status(db === 'down' ? 503 : 200).json({ ok: db !== 'down', db, uptime: Math.round(process.uptime()), auth: sec.AUTH_ENABLED && sec.AUTH_CONFIGURED });
+});
+
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'views', 'login.html')));
+
+app.post('/api/login', (req, res) => {
+  const wait = sec.loginBlocked(req.ip);
+  if (wait) return res.status(429).json({ error: `Too many attempts. Try again in ${Math.ceil(wait / 60)} minute(s).` });
+  if (!sec.AUTH_CONFIGURED) {
+    return res.status(sec.AUTH_ENABLED ? 503 : 200).json(
+      sec.AUTH_ENABLED ? { error: 'OPERATOR_PASSWORD is not set on the server.' } : { ok: true }
+    );
+  }
+  if (!sec.checkPassword(req.body && req.body.password)) {
+    sec.recordLoginFailure(req.ip);
+    return res.status(401).json({ error: 'Incorrect password.' });
+  }
+  sec.clearLoginFailures(req.ip);
+  sec.setSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.post('/api/logout', (req, res) => {
+  sec.clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    maxAge: '1h',
+    etag: true,
+    setHeaders: (res, file) => {
+      if (file.endsWith('sw.js')) res.setHeader('Cache-Control', 'no-cache');
+      if (/\/images\/\d\d_|\/images\/brand\//.test(file)) res.setHeader('Cache-Control', 'public, max-age=604800');
+    },
+  })
+);
+
+// The projector (/display) and the confidence monitor (/stage) are view-only
+// and need no sign-in. Everything that can CHANGE the screen requires the
+// operator session: /control, /remote, every write API and every write socket event.
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'display.html')));
+app.get('/stage', (req, res) => res.sendFile(path.join(__dirname, 'views', 'stage.html')));
+app.get('/control', sec.requireOperator, (req, res) => res.sendFile(path.join(__dirname, 'views', 'control.html')));
+app.get('/remote', sec.requireOperator, (req, res) => res.sendFile(path.join(__dirname, 'views', 'remote.html')));
 app.get('/', (req, res) => res.redirect('/control'));
+
+// Only the assets the projector itself must fetch stay public.
+const PUBLIC_API = [/^\/api\/login$/, /^\/api\/media\/file\/[A-Za-z0-9_-]+$/, /^\/api\/theme-image\/[A-Za-z0-9_-]+$/];
+app.use('/api', (req, res, next) => {
+  const p = req.originalUrl.split('?')[0];
+  if (PUBLIC_API.some((r) => r.test(p))) return next();
+  return sec.requireOperator(req, res, next);
+});
 
 app.get('/api/songs', async (req, res) => {
   try {
@@ -629,15 +835,16 @@ app.get('/api/songs/:id', async (req, res) => {
 
 // Add a new custom song
 app.post('/api/songs', async (req, res) => {
-  const { title, artist, sections } = req.body;
-  if (!title || !Array.isArray(sections) || sections.length === 0) {
+  const title = sec.str(req.body.title, 200).trim();
+  const clean = sec.sanitizeSections(req.body.sections);
+  if (!title || !clean) {
     return res.status(400).json({ error: 'title and at least one section are required' });
   }
   const newSong = {
     id: slugify(title),
     title,
-    artist: artist || '',
-    sections,
+    artist: sec.str(req.body.artist, 200),
+    sections: clean,
   };
   try {
     await addCustomSong(newSong);
@@ -663,12 +870,13 @@ app.delete('/api/songs/:id', async (req, res) => {
 // Edit a custom song in place (title, artist, and/or lyrics) — e.g. filling
 // in real lyrics later for a song that was added as a title-only stub.
 app.put('/api/songs/:id', async (req, res) => {
-  const { title, artist, sections } = req.body;
-  if (!title || !Array.isArray(sections) || sections.length === 0) {
+  const title = sec.str(req.body.title, 200).trim();
+  const sections = sec.sanitizeSections(req.body.sections);
+  if (!title || !sections) {
     return res.status(400).json({ error: 'title and at least one section are required' });
   }
   try {
-    const updated = await updateCustomSong(req.params.id, { title, artist: artist || '', sections });
+    const updated = await updateCustomSong(req.params.id, { title, artist: sec.str(req.body.artist, 200), sections });
     if (!updated) return res.status(404).json({ error: 'Song not found (hymns cannot be edited this way)' });
     songCache = null; // invalidate
     res.json({ ok: true });
@@ -769,17 +977,33 @@ const BIBLE_BOOK_CODES = {
   '3john': '3JN', jude: 'JUD', revelation: 'REV',
 };
 
-// Parses "John 3:16", "1 John 3:16-18", "Song of Solomon 2:1" etc. into
-// {bookCode, chapter, verseStart, verseEnd}. Returns null if unparseable.
+// Common abbreviations operators actually type ("Jn 3:16", "1 Cor 13:4", "Rom 8:28").
+const BIBLE_BOOK_ALIASES = {
+  gen: 'GEN', ge: 'GEN', exod: 'EXO', ex: 'EXO', lev: 'LEV', num: 'NUM', deut: 'DEU', dt: 'DEU',
+  josh: 'JOS', judg: 'JDG', jdg: 'JDG', '1sam': '1SA', '2sam': '2SA', '1kgs': '1KI', '2kgs': '2KI',
+  '1chr': '1CH', '2chr': '2CH', neh: 'NEH', est: 'EST', ps: 'PSA', psa: 'PSA', pslm: 'PSA', prov: 'PRO',
+  pr: 'PRO', eccl: 'ECC', eccles: 'ECC', ecc: 'ECC', songofsongs: 'SNG', sos: 'SNG', isa: 'ISA', jer: 'JER',
+  lam: 'LAM', ezek: 'EZK', eze: 'EZK', dan: 'DAN', hos: 'HOS', obad: 'OBA', mic: 'MIC', nah: 'NAM',
+  hab: 'HAB', zeph: 'ZEP', hag: 'HAG', zech: 'ZEC', mal: 'MAL', matt: 'MAT', mt: 'MAT', mk: 'MRK',
+  mar: 'MRK', lk: 'LUK', luk: 'LUK', jn: 'JHN', joh: 'JHN', act: 'ACT', rom: 'ROM', ro: 'ROM',
+  '1cor': '1CO', '2cor': '2CO', gal: 'GAL', eph: 'EPH', phil: 'PHP', php: 'PHP', col: 'COL',
+  '1thess': '1TH', '2thess': '2TH', '1thes': '1TH', '2thes': '2TH', '1tim': '1TI', '2tim': '2TI', tit: 'TIT',
+  phlm: 'PHM', heb: 'HEB', jas: 'JAS', jam: 'JAS', '1pet': '1PE', '2pet': '2PE', '1jn': '1JN', '2jn': '2JN',
+  '3jn': '3JN', rev: 'REV', rv: 'REV',
+};
+
+// Parses "John 3:16", "1 John 3:16-18", "Song of Solomon 2:1", "Psalm 23" (whole
+// chapter) etc. into {bookCode, chapter, verseStart, verseEnd}. Null if unparseable.
 function parseBibleReference(ref) {
-  const m = ref.trim().match(/^((?:[1-3]\s*)?[A-Za-z][A-Za-z\s]*?)\s+(\d+)\s*:\s*(\d+)(?:\s*-\s*(\d+))?$/);
+  const m = ref.trim().match(/^((?:[1-3]\s*)?[A-Za-z][A-Za-z\s.]*?)\.?\s+(\d+)(?:\s*:\s*(\d+)(?:\s*-\s*(\d+))?)?$/);
   if (!m) return null;
-  const bookKey = m[1].toLowerCase().replace(/\s+/g, '');
-  const bookCode = BIBLE_BOOK_CODES[bookKey];
+  const bookKey = m[1].toLowerCase().replace(/[\s.]+/g, '');
+  const bookCode = BIBLE_BOOK_CODES[bookKey] || BIBLE_BOOK_ALIASES[bookKey];
   if (!bookCode) return null;
   const chapter = parseInt(m[2], 10);
-  const verseStart = parseInt(m[3], 10);
-  const verseEnd = m[4] ? parseInt(m[4], 10) : verseStart;
+  const verseStart = m[3] ? parseInt(m[3], 10) : 1;
+  const verseEnd = m[3] ? (m[4] ? parseInt(m[4], 10) : verseStart) : 999;
+  if (chapter < 1 || chapter > 150 || verseEnd < verseStart) return null;
   return { bookCode, chapter, verseStart, verseEnd };
 }
 
@@ -793,20 +1017,21 @@ function fetchHelloAoScripture(ref, version, cacheKey, res) {
     const content = (data.chapter && data.chapter.content) || [];
     const verses = content.filter((item) => item.type === 'verse' && item.number >= parsed.verseStart && item.number <= parsed.verseEnd);
     if (verses.length === 0) return { error: 'Reference not found: ' + ref, status: 404 };
-    const text = verses
-      .map((v) => v.content.map((c) => (typeof c === 'string' ? c : c.text || '')).join(' '))
-      .join(' ')
+    const clean = (v) => v.content.map((c) => (typeof c === 'string' ? c : c.text || '')).join(' ')
       .replace(/¶\s*/g, '') // KJV paragraph markers — not part of the verse text
       .replace(/\s+/g, ' ')
       .trim();
-    return { reference: ref, text, translation: t.name };
+    // Per-verse array lets the control room split long passages across several
+    // slides instead of shrinking a whole chapter into unreadable text.
+    const versesOut = verses.map((v) => ({ n: v.number, text: clean(v) }));
+    return { reference: ref, text: versesOut.map((v) => v.text).join(' '), translation: t.name, verses: versesOut };
   });
 }
 
 app.get('/api/scripture', async (req, res) => {
   const ref = (req.query.ref || '').trim();
   const version = (req.query.version || 'kjv').trim().toLowerCase();
-  if (!ref) return res.status(400).json({ error: 'Missing ref' });
+  if (!ref || ref.length > 80) return res.status(400).json({ error: 'Missing or invalid ref' });
 
   const cacheKey = version + '|' + ref.toLowerCase();
   const cached = scriptureCache.get(cacheKey);
@@ -868,7 +1093,7 @@ function fetchNltScripture(ref, cacheKey, res) {
 }
 
 // List of Bible versions the app can look up. Free/public-domain ones work
-// immediately via bible-api.com. Copyrighted ones (NIV/NLT/ESV/MSG/NKJV/AMP)
+// immediately via bible.helloao.org. Copyrighted ones (NIV/NLT/ESV/MSG/NKJV/AMP)
 // are NOT fetchable through any free, no-key API and are listed here only to
 // show their status honestly in the UI.
 app.get('/api/bible-versions', (req, res) => {
@@ -894,8 +1119,9 @@ app.get('/api/bible-versions', (req, res) => {
 // Upload an image to use as a custom theme background
 app.post('/api/theme-image', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded (must be an image file, max 8MB)' });
+  if (!looksLikeImage(req.file.buffer)) return res.status(400).json({ error: 'That file is not a valid JPG/PNG/GIF/WebP image' });
   try {
-    const url = await saveThemeImage(req.file.buffer, req.file.mimetype, req.file.originalname);
+    const url = await saveThemeImage(req.file.buffer, sniffImageMime(req.file.buffer), req.file.originalname);
     res.json({ url });
   } catch (e) {
     res.status(500).json({ error: 'Could not save image: ' + e.message });
@@ -906,6 +1132,7 @@ app.post('/api/theme-image', upload.single('image'), async (req, res) => {
 // static files from /images/custom-themes/ instead)
 app.get('/api/theme-image/:id', async (req, res) => {
   if (!pool) return res.status(404).end();
+  res.set('X-Content-Type-Options', 'nosniff');
   try {
     const { rows } = await pool.query('SELECT mimetype, data FROM wp_theme_images WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).end();
@@ -997,9 +1224,28 @@ app.get('/api/media/file/:id', async (req, res) => {
     const file = await getMediaFile(req.params.id);
     if (!file) return res.status(404).end();
     if (file.externalUrl) return res.redirect(file.externalUrl);
+    const data = file.data;
     res.set('Content-Type', file.mimetype || 'application/octet-stream');
+    res.set('X-Content-Type-Options', 'nosniff');
     res.set('Cache-Control', 'public, max-age=31536000, immutable');
-    res.send(file.data);
+    res.set('Accept-Ranges', 'bytes');
+    // HTTP Range support: required for video seeking and for Safari/iOS to
+    // play uploaded video at all.
+    const range = req.headers.range && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+    if (range && data.length) {
+      let start = range[1] ? parseInt(range[1], 10) : data.length - parseInt(range[2] || '0', 10);
+      let end = range[1] && range[2] ? parseInt(range[2], 10) : data.length - 1;
+      end = Math.min(end, data.length - 1);
+      if (!(start >= 0) || start > end) {
+        res.set('Content-Range', `bytes */${data.length}`);
+        return res.status(416).end();
+      }
+      res.status(206);
+      res.set('Content-Range', `bytes ${start}-${end}/${data.length}`);
+      res.set('Content-Length', String(end - start + 1));
+      return res.end(data.subarray(start, end + 1));
+    }
+    res.send(data);
   } catch (e) {
     res.status(500).end();
   }
@@ -1007,9 +1253,11 @@ app.get('/api/media/file/:id', async (req, res) => {
 
 app.post('/api/media/image', uploadMediaImage.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded (must be an image file, max 15MB)' });
+  const imgMime = sniffImageMime(req.file.buffer);
+  if (!imgMime) return res.status(400).json({ error: 'That file is not a valid JPG/PNG/GIF/WebP image' });
   try {
-    const title = (req.body.title || req.file.originalname || 'Image').trim();
-    const id = await saveMediaRow({ kind: 'image', title, mimetype: req.file.mimetype, buffer: req.file.buffer });
+    const title = sec.str((req.body.title || req.file.originalname || 'Image').trim(), 200);
+    const id = await saveMediaRow({ kind: 'image', title, mimetype: imgMime, buffer: req.file.buffer });
     res.json({ id, kind: 'image', title, url: `/api/media/file/${id}` });
   } catch (e) {
     res.status(500).json({ error: 'Could not save image: ' + e.message });
@@ -1020,16 +1268,21 @@ app.post('/api/media/image', uploadMediaImage.single('file'), async (req, res) =
 // YouTube/Vimeo/direct .mp4 etc.), so a long clip doesn't have to be uploaded
 // at all — just linked, EasyWorship-style "media from web" equivalent.
 app.post('/api/media/video', uploadMediaVideo.single('file'), async (req, res) => {
-  const title = (req.body.title || (req.file && req.file.originalname) || 'Video').trim();
+  const title = sec.str((req.body.title || (req.file && req.file.originalname) || 'Video').trim(), 200);
   try {
     if (req.file) {
-      const id = await saveMediaRow({ kind: 'video', title, mimetype: req.file.mimetype, buffer: req.file.buffer });
+      const vidMime = sniffVideoMime(req.file.buffer);
+      if (!vidMime) return res.status(400).json({ error: 'Unsupported video — please use an MP4 or WebM file (or paste a link)' });
+      const id = await saveMediaRow({ kind: 'video', title, mimetype: vidMime, buffer: req.file.buffer });
       res.json({ id, kind: 'video', title, url: `/api/media/file/${id}` });
     } else if (req.body.url && req.body.url.trim()) {
-      const id = await saveMediaRow({ kind: 'video', title, externalUrl: req.body.url.trim() });
-      res.json({ id, kind: 'video', title, url: req.body.url.trim(), external: true });
+      const link = req.body.url.trim();
+      // Only real web links — never javascript:, data:, file: etc.
+      if (!/^https?:\/\/[^\s"'<>\\]{4,1900}$/i.test(link)) return res.status(400).json({ error: 'That does not look like a valid http(s) video link' });
+      const id = await saveMediaRow({ kind: 'video', title, externalUrl: link });
+      res.json({ id, kind: 'video', title, url: link, external: true });
     } else {
-      res.status(400).json({ error: 'Provide a video file (max 60MB) or a video link' });
+      res.status(400).json({ error: 'Provide a video file (max 40MB) or a video link' });
     }
   } catch (e) {
     res.status(500).json({ error: 'Could not save video: ' + e.message });
@@ -1039,13 +1292,27 @@ app.post('/api/media/video', uploadMediaVideo.single('file'), async (req, res) =
 // PowerPoint upload: converts every slide to a PNG (via LibreOffice + poppler)
 // and stores them as a "deck" so the presenter can click through it exactly
 // like a song's slides — no PowerPoint software needed on the display machine.
+// LibreOffice is heavy (hundreds of MB of RAM). On the small Render instance two
+// simultaneous conversions can get the whole presenter OOM-killed mid-service,
+// so conversions run strictly one at a time; extra uploads wait their turn.
+let pptxQueue = Promise.resolve();
+function runExclusive(fn) {
+  const run = pptxQueue.then(fn, fn);
+  pptxQueue = run.catch(() => {});
+  return run;
+}
 app.post('/api/media/pptx', uploadPptx.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No PowerPoint file uploaded (.ppt/.pptx, max 50MB)' });
+  // .pptx is a zip (PK..); legacy .ppt is an OLE2 container (D0 CF 11 E0)
+  const head = req.file.buffer.subarray(0, 4);
+  const okMagic = head.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) || head.equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0]));
+  if (!okMagic) return res.status(400).json({ error: 'That file is not a valid PowerPoint presentation' });
+  let deckId = null;
   try {
-    const title = (req.body.title || req.file.originalname.replace(/\.(pptx|ppt)$/i, '')).trim();
+    const title = sec.str((req.body.title || req.file.originalname.replace(/\.(pptx|ppt)$/i, '')).trim(), 200);
     const ext = /\.ppt$/i.test(req.file.originalname) ? '.ppt' : '.pptx';
-    const slideBuffers = await convertDeckToSlideImages(req.file.buffer, ext);
-    const deckId = await saveMediaRow({ kind: 'deck', title, mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+    const slideBuffers = await runExclusive(() => convertDeckToSlideImages(req.file.buffer, ext));
+    deckId = await saveMediaRow({ kind: 'deck', title, mimetype: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
     const slides = [];
     for (let i = 0; i < slideBuffers.length; i++) {
       const slideId = await saveMediaRow({ kind: 'deck-slide', parentId: deckId, slideIndex: i, mimetype: 'image/png', buffer: slideBuffers[i] });
@@ -1054,6 +1321,7 @@ app.post('/api/media/pptx', uploadPptx.single('file'), async (req, res) => {
     res.json({ id: deckId, kind: 'deck', title, slideCount: slides.length, slides });
   } catch (e) {
     console.error('PPTX conversion error:', e.message);
+    if (deckId) await deleteMediaItem(deckId).catch(() => {}); // never leave a half-saved deck behind
     res.status(500).json({ error: e.message || 'Could not convert PowerPoint file' });
   }
 });
@@ -1083,9 +1351,21 @@ app.get('/api/schedule', async (req, res) => {
 
 app.post('/api/schedule', async (req, res) => {
   const { displayTitle, stateType } = req.body;
-  if (!displayTitle || !stateType) return res.status(400).json({ error: 'displayTitle and stateType are required' });
+  const TYPES = ['song', 'whole-song', 'scripture-ref', 'media-image', 'media-video', 'media-deck', 'free-text'];
+  if (!displayTitle || !TYPES.includes(stateType)) return res.status(400).json({ error: 'displayTitle and a valid stateType are required' });
+  // Only whitelisted fields are stored — never an arbitrary client blob.
+  const item_ = { displayTitle: sec.str(displayTitle, 200), stateType };
+  if (stateType === 'song') {
+    item_.state = sec.sanitizeState(req.body.state);
+    if (!item_.state) return res.status(400).json({ error: 'invalid slide' });
+  }
+  if (stateType === 'whole-song') item_.songId = sec.str(req.body.songId, 200);
+  if (stateType === 'scripture-ref') item_.ref = sec.str(req.body.ref, 80);
+  if (stateType === 'media-image' || stateType === 'media-video') item_.url = sec.safeUrl(req.body.url);
+  if (stateType === 'media-deck') item_.deckId = sec.str(req.body.deckId, 100);
+  if (stateType === 'free-text') item_.text = sec.str(req.body.text, 6000);
   try {
-    const item = await addScheduleRow(req.body);
+    const item = await addScheduleRow(item_);
     res.json(item);
   } catch (e) {
     res.status(500).json({ error: 'Could not add to schedule: ' + e.message });
@@ -1122,49 +1402,235 @@ app.delete('/api/schedule', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Realtime. Anyone may WATCH (projector, confidence monitor). Only a signed-in
+// operator socket may CHANGE anything — every write event is gated and its
+// payload validated, so a stranger who finds the URL can't take over the screen.
+// ---------------------------------------------------------------------------
+io.use((socket, next) => {
+  socket.data.operator = sec.isOperatorFromCookieHeader(socket.handshake.headers.cookie);
+  next();
+});
+
 io.on('connection', (socket) => {
-  // Catch up any newly-connected display/control client on both channels
+  // Catch up any newly-connected client on every channel (also what makes a
+  // reconnect after a Wi-Fi blip or server restart instantly correct).
+  socket.emit('server-time', Date.now());
   socket.emit('live-state', liveState);
   socket.emit('preview-state', previewState);
   socket.emit('ticker-state', tickerState);
+  socket.emit('overlay-state', overlayMode);
+  socket.emit('timer-state', timerState);
+  socket.emit('settings-state', settingsState);
+  socket.emit('alert-state', alertState.until > Date.now() ? alertState : { text: '', until: 0 });
+  socket.emit('whoami', { operator: socket.data.operator });
+  if (socket.data.operator) socket.emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
+
+  socket.on('hello', (role) => {
+    if (socket.data.operator && (role === 'control' || role === 'remote')) socket.join(role === 'control' ? 'controllers' : 'remotes');
+  });
+  socket.on('time-sync', (ack) => { if (typeof ack === 'function') ack(Date.now()); });
+
+  // Wrap every write handler: operator-only, and never let a bad payload throw.
+  const guard = (fn) => (...args) => {
+    if (!socket.data.operator) return socket.emit('auth-error', 'Sign in required');
+    try { fn(...args); } catch (e) { console.error('socket handler error:', e.message); }
+  };
 
   // Stage content into Preview only — does not touch what the audience sees
-  socket.on('stage', (payload) => {
-    previewState = payload;
+  socket.on('stage', guard((payload) => {
+    const st = sec.sanitizeState(payload);
+    if (!st) return;
+    previewState = st;
     io.emit('preview-state', previewState);
-  });
+    persistState();
+  }));
 
   // Promote whatever is currently staged in Preview to Live
-  socket.on('golive', () => {
+  socket.on('golive', guard(() => {
     liveState = previewState;
+    pushHistory(liveState);
     io.emit('live-state', liveState);
-  });
+    io.to('controllers').to('remotes').emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
+    persistState();
+  }));
 
   // Direct-to-live, bypassing Preview entirely (used by Voice Detect auto-project)
-  socket.on('project', (payload) => {
-    liveState = payload;
+  socket.on('project', guard((payload) => {
+    const st = sec.sanitizeState(payload);
+    if (!st) return;
+    liveState = st;
+    pushHistory(liveState);
     io.emit('live-state', liveState);
-  });
+    io.to('controllers').to('remotes').emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
+    persistState();
+  }));
 
-  socket.on('clear', () => {
+  socket.on('clear', guard(() => {
     liveState = { type: 'blank' };
+    overlayMode = 'none';
     io.emit('live-state', liveState);
-  });
+    io.emit('overlay-state', overlayMode);
+    persistState();
+  }));
 
-  // Scrolling ticker (lower-third banner) — independent of the main slide,
-  // shown on Live (and Preview, for the operator to check it before airing).
-  socket.on('ticker-update', (payload) => {
-    tickerState = { active: !!payload.active, text: payload.text || '' };
+  // Black / Logo / Clear-text — hides the output WITHOUT losing the live slide,
+  // so a single key brings it straight back (core EasyWorship/ProPresenter behaviour).
+  socket.on('overlay', guard((mode) => {
+    if (!['none', 'black', 'logo', 'clear'].includes(mode)) return;
+    overlayMode = mode;
+    io.emit('overlay-state', overlayMode);
+    persistState();
+  }));
+
+  // Scrolling ticker (lower-third banner) — independent of the main slide.
+  socket.on('ticker-update', guard((payload) => {
+    tickerState = { active: !!(payload && payload.active), text: sec.str(payload && payload.text, 600) };
     io.emit('ticker-state', tickerState);
-  });
+    persistState();
+  }));
+
+  // Service countdown / sermon timer (server-clock based so every screen agrees).
+  socket.on('timer-set', guard((payload) => {
+    timerState = cleanTimer(payload);
+    io.emit('timer-state', timerState);
+    persistState();
+  }));
+
+  // Temporary on-screen alert (nursery call, "please move your car", ...)
+  socket.on('alert-show', guard((payload) => {
+    const text = sec.str(payload && payload.text, 200).trim();
+    clearTimeout(alertTimer);
+    if (!text) {
+      alertState = { text: '', until: 0 };
+    } else {
+      const seconds = Math.min(120, Math.max(3, Number(payload.seconds) || 12));
+      alertState = { text, until: Date.now() + seconds * 1000 };
+      alertTimer = setTimeout(() => {
+        alertState = { text: '', until: 0 };
+        io.emit('alert-state', alertState);
+      }, seconds * 1000);
+    }
+    io.emit('alert-state', alertState);
+  }));
+
+  socket.on('settings-update', guard((payload) => {
+    settingsState = cleanSettings({ ...settingsState, ...payload });
+    io.emit('settings-state', settingsState);
+    persistState();
+  }));
+
+  // Phone remote -> control room: the control room owns slide navigation, so
+  // the remote simply asks it to act (next / prev / golive / black / schedule item ...).
+  socket.on('remote-cmd', guard((cmd) => {
+    if (!cmd || typeof cmd !== 'object') return;
+    const clean = { cmd: sec.str(cmd.cmd, 20), id: sec.str(cmd.id, 100), live: !!cmd.live };
+    io.to('controllers').emit('remote-cmd', clean);
+  }));
 });
 
+// ---------------------------------------------------------------------------
+// Backup / restore of everything the operator creates (songs, schedule,
+// announcements, free texts) — one JSON file, downloadable any time.
+// ---------------------------------------------------------------------------
+app.get('/api/backup', async (req, res) => {
+  try {
+    const backup = {
+      app: 'worship-presenter',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      songs: await loadCustomSongs(),
+      announcements: await loadAnnouncementsList(),
+      freeTexts: await loadFreeTextsList(),
+      schedule: await loadScheduleList(),
+    };
+    res.set('Content-Disposition', `attachment; filename="presenter-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+    res.json(backup);
+  } catch (e) {
+    res.status(500).json({ error: 'Could not build backup: ' + e.message });
+  }
+});
+
+// Merge-restore: adds anything missing, never overwrites or deletes existing data.
+app.post('/api/restore', async (req, res) => {
+  const b = req.body || {};
+  if (b.app !== 'worship-presenter') return res.status(400).json({ error: 'Not a presenter backup file' });
+  let added = { songs: 0, announcements: 0, freeTexts: 0 };
+  try {
+    const existingSongs = new Set((await loadCustomSongs()).map((s) => s.id));
+    for (const s of (Array.isArray(b.songs) ? b.songs : []).slice(0, 2000)) {
+      const sections = sec.sanitizeSections(s && s.sections);
+      const title = sec.str(s && s.title, 200).trim();
+      const id = sec.str(s && s.id, 200);
+      if (!sections || !title || !id || existingSongs.has(id)) continue;
+      await addCustomSong({ id, title, artist: sec.str(s.artist, 200), sections });
+      added.songs++;
+    }
+    const existingAnn = new Set((await loadAnnouncementsList()).map((a) => a.text));
+    for (const a of (Array.isArray(b.announcements) ? b.announcements : []).slice(0, 500)) {
+      const text = sec.str(a && a.text, 600).trim();
+      if (text && !existingAnn.has(text)) { await addAnnouncementItem(text); added.announcements++; }
+    }
+    const existingFt = new Set((await loadFreeTextsList()).map((a) => a.text));
+    for (const f of (Array.isArray(b.freeTexts) ? b.freeTexts : []).slice(0, 500)) {
+      const text = sec.str(f && f.text, 6000).trim();
+      if (text && !existingFt.has(text)) { await addFreeTextItem(text); added.freeTexts++; }
+    }
+    songCache = null;
+    res.json({ ok: true, added });
+  } catch (e) {
+    res.status(500).json({ error: 'Restore failed: ' + e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Errors: always JSON for the API (never an HTML stack trace), with friendly
+// messages for the upload failures operators actually hit.
+// ---------------------------------------------------------------------------
+app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'That file is too large.' });
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'Request too large.' });
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Malformed request.' });
+  console.error('Unhandled error:', err && err.message);
+  res.status(500).json({ error: 'Something went wrong on the server.' });
+});
+
+process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e && e.message));
+process.on('uncaughtException', (e) => console.error('uncaughtException:', e && e.message));
+
+// ---------------------------------------------------------------------------
+// Boot + graceful shutdown (Render sends SIGTERM on every deploy: save the
+// current screen state first so the next instance resumes exactly where we were).
+// ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 4000;
-initDb()
-  .then(() => {
-    server.listen(PORT, () => console.log(`Worship Presenter running at http://localhost:${PORT}`));
-  })
-  .catch((e) => {
-    console.error('DB init failed, starting anyway with file fallback:', e.message);
-    server.listen(PORT, () => console.log(`Worship Presenter running at http://localhost:${PORT}`));
+function listen() {
+  server.listen(PORT, () => {
+    console.log(`Worship Presenter running at http://localhost:${PORT}`);
+    if (!sec.AUTH_CONFIGURED) {
+      console.warn(sec.IS_PROD
+        ? 'WARNING: OPERATOR_PASSWORD is not set — the control room is LOCKED until you set it.'
+        : 'Note: OPERATOR_PASSWORD not set — control room is open (development mode only).');
+    }
   });
+}
+initDb()
+  .catch((e) => console.error('DB init failed, continuing with file fallback:', e.message))
+  .then(restoreState)
+  .then(listen);
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(signal + ' received — saving state and shutting down.');
+  try { await flushState(); } catch (e) {}
+  io.close();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 8000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+module.exports = { app, server };
