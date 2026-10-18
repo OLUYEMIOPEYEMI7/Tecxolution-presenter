@@ -625,12 +625,19 @@ function pickBookSuggestion(bookName) {
 
 scriptureInputEl.addEventListener('input', () => {
   const val = scriptureInputEl.value;
-  // Once a digit shows up, the operator has moved on to chapter:verse — stop suggesting.
-  if (/\d/.test(val)) {
+  // Only stop suggesting once the typed text no longer matches the start of
+  // ANY book name — not simply "a digit appeared". Several real book names
+  // legitimately start with a digit (1 Samuel, 2 Kings, 1 Thessalonians,
+  // 3 John, etc.), so checking for a bare digit broke autocomplete for all
+  // of them. Once the operator types past the book name into the chapter
+  // number (e.g. "1 Samuel 1"), no book name starts with that text anymore
+  // and suggestions correctly disappear on their own.
+  const suggestions = currentBookSuggestions(val);
+  if (suggestions.length === 0) {
     bookSuggestionsEl.classList.remove('open');
     return;
   }
-  renderBookSuggestions(currentBookSuggestions(val));
+  renderBookSuggestions(suggestions);
 });
 
 scriptureInputEl.addEventListener('keydown', (e) => {
