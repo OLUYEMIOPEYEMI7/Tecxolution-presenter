@@ -941,6 +941,14 @@ button.danger:hover { background: var(--danger); box-shadow: 0 4px 14px rgba(239
   max-height: 400px;
   overflow-y: auto;
 }
+.bible-crumbs-inline {
+  padding: 8px 12px 0;
+  font-size: 11px;
+  color: var(--text-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 .bible-number-btn {
   padding: 10px 0;
   text-align: center;

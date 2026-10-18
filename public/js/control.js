@@ -588,9 +588,11 @@ function quickRef(ref, thenGoLive) {
 }
 
 // ================= Book name type-ahead (EasyWorship-style: type "G" -> Genesis) =================
-// Shows suggestions only while the user is still typing the book name itself
-// (no digits yet) — once a chapter number appears we assume the book is
-// chosen and get out of the way.
+// Full progressive flow: typing/picking a book advances straight to a
+// chapter picker, picking/typing a chapter advances straight to a verse
+// picker (verses shown the instant a valid chapter number appears, no
+// colon needed) — matching EasyWorship's "type and it completes itself"
+// feel instead of making the operator type the whole reference by hand.
 const scriptureInputEl = document.getElementById('scripture-input');
 const bookSuggestionsEl = document.getElementById('book-suggestions');
 let bookSuggestionActive = -1;
@@ -599,6 +601,19 @@ function currentBookSuggestions(query) {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   return BIBLE_STRUCTURE.filter((b) => b.name.toLowerCase().startsWith(q)).slice(0, 8);
+}
+
+// Resolves typed text to exactly one book: an exact name match ("Psalm"),
+// or a prefix that uniquely identifies one book ("Ps" only ever means
+// Psalm). Ambiguous prefixes (e.g. "J" matches many books) return null so
+// the operator still sees the full suggestion list to pick from.
+function resolveBook(text) {
+  const q = text.trim().toLowerCase();
+  if (!q) return null;
+  const exact = BIBLE_STRUCTURE.find((b) => b.name.toLowerCase() === q);
+  if (exact) return exact;
+  const matches = BIBLE_STRUCTURE.filter((b) => b.name.toLowerCase().startsWith(q));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function renderBookSuggestions(list) {
@@ -617,21 +632,91 @@ function renderBookSuggestions(list) {
   bookSuggestionsEl.classList.add('open');
 }
 
-function pickBookSuggestion(bookName) {
-  scriptureInputEl.value = bookName + ' ';
+function renderChapterGrid(book) {
+  bookSuggestionsEl.innerHTML = `
+    <div class="bible-crumbs-inline">${escapeHtmlLocal(book.name)} — choose a chapter</div>
+    <div class="bible-number-grid" style="padding:8px;">
+      ${book.chapters.map((_, i) =>
+        `<div class="bible-number-btn" onclick="pickInlineChapter('${book.name.replace(/'/g, "\\'")}', ${i + 1})">${i + 1}</div>`
+      ).join('')}
+    </div>
+  `;
+  bookSuggestionsEl.classList.add('open');
+}
+
+function renderVerseGrid(book, chapterNum, filterPrefix) {
+  const verseCount = book.chapters[chapterNum - 1];
+  if (!verseCount) { bookSuggestionsEl.classList.remove('open'); return; }
+  let verses = Array.from({ length: verseCount }, (_, i) => i + 1);
+  if (filterPrefix) verses = verses.filter((v) => String(v).startsWith(filterPrefix));
+  bookSuggestionsEl.innerHTML = `
+    <div class="bible-crumbs-inline">${escapeHtmlLocal(book.name)} ${chapterNum} — choose a verse</div>
+    <div class="bible-number-grid" style="padding:8px;">
+      ${verses.map((v) =>
+        `<div class="bible-number-btn" onclick="pickInlineVerse('${book.name.replace(/'/g, "\\'")}', ${chapterNum}, ${v})" ondblclick="pickInlineVerse('${book.name.replace(/'/g, "\\'")}', ${chapterNum}, ${v}, true)">${v}</div>`
+      ).join('') || '<p style="padding:8px; color:#666; font-size:12px; grid-column:1/-1;">No matching verse</p>'}
+    </div>
+  `;
+  bookSuggestionsEl.classList.add('open');
+}
+
+function pickInlineChapter(bookName, chapterNum) {
+  const book = BIBLE_STRUCTURE.find((b) => b.name === bookName);
+  if (!book) return;
+  scriptureInputEl.value = bookName + ' ' + chapterNum + ':';
+  renderVerseGrid(book, chapterNum, '');
+  scriptureInputEl.focus();
+}
+
+function pickInlineVerse(bookName, chapterNum, verseNum, goLive) {
+  scriptureInputEl.value = bookName + ' ' + chapterNum + ':' + verseNum;
   bookSuggestionsEl.classList.remove('open');
   scriptureInputEl.focus();
+  if (goLive) stageScripture(true);
+}
+
+
+function pickBookSuggestion(bookName) {
+  const book = BIBLE_STRUCTURE.find((b) => b.name === bookName);
+  scriptureInputEl.value = bookName + ' ';
+  scriptureInputEl.focus();
+  if (book) renderChapterGrid(book); else bookSuggestionsEl.classList.remove('open');
 }
 
 scriptureInputEl.addEventListener('input', () => {
   const val = scriptureInputEl.value;
-  // Only stop suggesting once the typed text no longer matches the start of
-  // ANY book name — not simply "a digit appeared". Several real book names
-  // legitimately start with a digit (1 Samuel, 2 Kings, 1 Thessalonians,
-  // 3 John, etc.), so checking for a bare digit broke autocomplete for all
-  // of them. Once the operator types past the book name into the chapter
-  // number (e.g. "1 Samuel 1"), no book name starts with that text anymore
-  // and suggestions correctly disappear on their own.
+  const trimmed = val.trim();
+
+  // 1) A chapter number has appeared after the book name (with or without
+  //    a colon, e.g. "Psalm 1" or "Psalm 1:1") — show the verse picker
+  //    immediately, filtering by any verse digits already typed. This is
+  //    the "type the chapter, the verse list shows right away" behavior.
+  const m = trimmed.match(/^(.+?)\s+(\d+)(?::(\d*))?$/);
+  if (m) {
+    const book = resolveBook(m[1]);
+    const chapterNum = parseInt(m[2], 10);
+    if (book && chapterNum >= 1 && chapterNum <= book.chapters.length) {
+      renderVerseGrid(book, chapterNum, m[3] || '');
+    } else {
+      bookSuggestionsEl.classList.remove('open'); // invalid/incomplete book or chapter — let them keep typing
+    }
+    return;
+  }
+
+  // 2) The book name is already complete — either typed in full ("Psalm")
+  //    or unambiguously identified by a short prefix ("Ps" only ever means
+  //    Psalm, "1 Th" only ever means 1 Thessalonians) — advance straight to
+  //    the chapter picker. (Case 1 above already ruled out "book + trailing
+  //    chapter number" — numbered books like "1 Samuel" legitimately start
+  //    with a digit, so we must NOT skip this just because trimmed has one.)
+  const resolved = resolveBook(trimmed);
+  if (resolved) {
+    renderChapterGrid(resolved);
+    return;
+  }
+
+  // 3) Still typing the book name itself and it doesn't uniquely resolve
+  //    yet (e.g. "J" matches many books) — ordinary type-ahead suggestions.
   const suggestions = currentBookSuggestions(val);
   if (suggestions.length === 0) {
     bookSuggestionsEl.classList.remove('open');
@@ -912,6 +997,7 @@ document.getElementById('scripture-input').addEventListener('keydown', (e) => {
   // try to stage/go-live on the same keypress.
   if (bookSuggestionsEl.classList.contains('open') && bookSuggestionActive >= 0) return;
   e.stopPropagation();
+  bookSuggestionsEl.classList.remove('open'); // close any open chapter/verse grid — the reference is complete now
   const val = scriptureInputEl.value.trim();
   if (val && val === lastEnterStagedRef) {
     goLive();
