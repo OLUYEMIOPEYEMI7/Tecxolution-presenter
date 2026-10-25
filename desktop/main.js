@@ -314,7 +314,7 @@ function buildMenu() {
       { label: 'Keyboard shortcuts', click: () => run('window.openShortcuts && openShortcuts()') },
       { label: 'Check for updates', click: async () => { if (autoUpdater) autoUpdater.checkForUpdates().catch(() => {}); else dialog.showMessageBox(controlWin, { type: 'info', message: 'Updates are checked automatically once the app is installed.' }); } },
       { type: 'separator' },
-      { label: `About Worship Presenter ${app.getVersion()}`, click: () => dialog.showMessageBox(controlWin, { type: 'info', title: 'About', message: `Worship Presenter ${app.getVersion()}`, detail: `RCCG Youth Province 9 · Peculiar Voices\n\nYour data is saved on this PC in:\n${dataDir()}\n\nWorks with or without internet. When online it syncs with your cloud copy and updates itself.` }) },
+      { label: `About Worship Presenter ${app.getVersion()}`, click: () => dialog.showMessageBox(controlWin, { type: 'info', title: 'About', message: `Worship Presenter ${app.getVersion()}`, detail: `RCCG Youth Province 9 · Peculiar Treasures\n\nYour data is saved on this PC in:\n${dataDir()}\n\nWorks with or without internet. When online it syncs with your cloud copy and updates itself.` }) },
     ] },
   ]));
 }
