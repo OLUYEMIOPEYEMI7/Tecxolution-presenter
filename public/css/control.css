@@ -261,3 +261,7 @@ code { background: var(--panel-3); padding: 1px 5px; border-radius: 4px; font-si
 #cloud-box input[type=text], #cloud-box input[type=password] { width: 100%; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--panel-0); color: var(--text); font-size: 13px; font-family: var(--font-ui); }
 #cloud-box .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 #cloud-box .sync-line { font-size: 12px; color: var(--text-soft); margin-top: 10px; line-height: 1.5; }
+
+/* Voice Detect: big, readable "what I heard" chip */
+.voice-heard { font-size: 20px; font-weight: 800; letter-spacing: .3px; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; background: #2c2c13; color: var(--gold); border: 1px solid var(--gold); }
+.voice-heard.done { background: #12301f; color: #6ee7a0; border-color: #2f9e62; }

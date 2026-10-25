@@ -277,7 +277,16 @@
           <label style="font-size:12px; color:#ccc; display:flex; align-items:center; gap:6px;">
             <input type="checkbox" id="auto-engage" checked /> Auto-project
           </label>
+          <select id="voice-lang" onchange="setVoiceLang(this.value)" title="Accent / language the microphone should expect" style="font-size:12px;">
+            <option value="en-NG">English (Nigeria)</option>
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="en-ZA">English (South Africa)</option>
+            <option value="en-GH">English (Ghana)</option>
+            <option value="en-KE">English (Kenya)</option>
+          </select>
         </div>
+        <div id="voice-heard" class="voice-heard" style="display:none;"></div>
         <p style="font-size:11px; color:#888; margin:0 0 8px;">
           Listens for spoken references like "Genesis chapter one verse one" and projects them automatically (bypasses Preview — goes straight Live).
           Uncheck Auto-project to require a confirm click instead.

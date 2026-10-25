@@ -1376,11 +1376,22 @@ function highlightDeckSlide() {
 // ================= Voice Detect (Phase 2) =================
 let pendingSuggestion = null;
 
+// Voice Detect pre-fetches the verse the moment a reference is first heard,
+// so by the time it is confirmed stable the text is already here.
+const voicePrefetch = new Map();
+function prefetchScripture(ref) {
+  if (voicePrefetch.has(ref)) return voicePrefetch.get(ref);
+  const p = fetch(scriptureUrl(ref)).then((r) => r.json()).catch(() => ({ error: true }));
+  voicePrefetch.set(ref, p);
+  if (voicePrefetch.size > 20) voicePrefetch.delete(voicePrefetch.keys().next().value);
+  setTimeout(() => voicePrefetch.delete(ref), 60000);
+  return p;
+}
+
 function projectScriptureByRef(ref) {
   const statusEl = document.getElementById('scripture-status');
   statusEl.textContent = 'Looking up… ' + ref;
-  return fetch(scriptureUrl(ref))
-    .then((r) => r.json())
+  return prefetchScripture(ref)
     .then((data) => {
       if (data.error) {
         statusEl.textContent = 'Not found: ' + ref;
@@ -1411,17 +1422,34 @@ function addVoiceLog(text) {
   while (voiceLogEl.children.length > 8) voiceLogEl.removeChild(voiceLogEl.lastChild);
 }
 
+function showVoiceHeard(text, cls) {
+  const el = document.getElementById('voice-heard');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'voice-heard ' + (cls || '');
+  el.style.display = text ? 'block' : 'none';
+}
+
 const voiceDetector = new VoiceDetector({
+  lang: (function () { try { return localStorage.getItem('wp_voice_lang') || 'en-NG'; } catch (e) { return 'en-NG'; } })(),
   onTranscript: (text) => {
-    document.getElementById('voice-transcript').textContent = text;
+    const el = document.getElementById('voice-transcript');
+    el.textContent = text;
+    el.scrollTop = el.scrollHeight;
   },
   onStatus: (status) => {
     document.getElementById('voice-status').textContent = status;
+  },
+  onCandidate: (match) => {
+    prefetchScripture(match.reference);
+    showVoiceHeard('Heard: ' + match.reference + (match.hasVerse ? '' : ' …'), 'hearing');
   },
   onReferenceDetected: (match) => {
     const autoEngage = document.getElementById('auto-engage').checked;
     if (autoEngage) {
       addVoiceLog('Detected & projected: ' + match.reference);
+      showVoiceHeard('✓ ' + match.reference, 'done');
+      setTimeout(() => showVoiceHeard(''), 3500);
       projectScriptureByRef(match.reference);
     } else {
       pendingSuggestion = match;
@@ -1431,6 +1459,13 @@ const voiceDetector = new VoiceDetector({
     }
   },
 });
+
+(function () { const sel = document.getElementById('voice-lang'); if (sel) sel.value = voiceDetector.lang; })();
+
+function setVoiceLang(lang) {
+  try { localStorage.setItem('wp_voice_lang', lang); } catch (e) {}
+  voiceDetector.setLanguage(lang);
+}
 
 function toggleVoiceDetect() {
   const btn = document.getElementById('voice-start-btn');

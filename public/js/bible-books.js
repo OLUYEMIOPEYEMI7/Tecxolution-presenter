@@ -68,10 +68,18 @@ const BIBLE_BOOKS = {
   'third john': '3 John', '3 john': '3 John',
   jude: 'Jude',
   revelation: 'Revelation', revelations: 'Revelation', rev: 'Revelation',
+  // common plural / mis-hearings from speech engines
+  roman: 'Romans', galatian: 'Galatians', ephesian: 'Ephesians', efesians: 'Ephesians',
+  philippian: 'Philippians', colossian: 'Colossians', hebrew: 'Hebrews', proverb: 'Proverbs',
+  lamentation: 'Lamentations', salm: 'Psalm', some: null, 'songs of solomon': 'Song of Solomon',
+  'song of songs': 'Song of Solomon', canticles: 'Song of Solomon',
+  '1 corinthian': '1 Corinthians', '2 corinthian': '2 Corinthians',
+  '1 thessalonian': '1 Thessalonians', '2 thessalonian': '2 Thessalonians',
+  '1 chronicle': '1 Chronicles', '2 chronicle': '2 Chronicles',
+  '1 king': '1 Kings', '2 king': '2 Kings',
+  'deuteronomy': 'Deuteronomy', 'ecclesiastes': 'Ecclesiastes',
 };
-
-// Longest-alias-first list for matching multi-word book names before single words
-const BOOK_ALIASES = Object.keys(BIBLE_BOOKS).sort((a, b) => b.length - a.length);
+delete BIBLE_BOOKS.some;
 
 const NUM_WORDS = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
@@ -82,87 +90,144 @@ const NUM_WORDS = {
 
 const TENS_WORDS = new Set(['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']);
 
-// Replace spoken number words with digits. Only merges a tens-word with a
-// following ones-word into one compound number (e.g. "twenty" + "eight" -> 28),
-// per standard English number grammar — adjacent standalone numbers like
-// "one one" (chapter 1, verse 1) or "eight twenty eight" (chapter 8, verse 28)
-// are correctly kept as separate numbers instead of being summed together.
+// "first john" / "1st john" / "second corinthians" -> "1 john" / "2 corinthians"
+const ORDINALS = { first: '1', '1st': '1', second: '2', '2nd': '2', third: '3', '3rd': '3' };
+const ORDINAL_BOOKS = /^(samuel|kings|chronicles?|corinthians?|thessalonians?|timothy|peter|john)$/;
+
+// Spoken-number homophones the speech engine often writes as words. Only
+// applied inside the reference window (right after a book name / chapter /
+// verse marker), never to ordinary speech.
+const HOMOPHONES = { for: '4', fore: '4', to: '2', too: '2', won: '1', ate: '8', tree: '3', free: '3', sex: '6' };
+
+// Words allowed between a book name and its numbers ("chapter 3 verse 16").
+const FILLER = new Set(['chapter', 'chapters', 'verse', 'verses', 'versus', 'vs', 'and', 'the', 'colon', 'in']);
+
+// Replace spoken number words with digits. Handles tens+ones ("twenty eight"),
+// hundreds ("one hundred and nineteen", "a hundred and fifty") and keeps
+// adjacent standalone numbers separate ("eight twenty eight" -> "8 28").
 function normalizeSpokenNumbers(text) {
-  const tokens = text.split(/\s+/);
+  const tokens = text.split(/\s+/).filter(Boolean);
   const out = [];
   let i = 0;
   while (i < tokens.length) {
     const tok = tokens[i];
-    if (NUM_WORDS[tok] !== undefined) {
+    const isNum = NUM_WORDS[tok] !== undefined;
+    if ((isNum || (tok === 'a' && tokens[i + 1] === 'hundred')) && tokens[i + (tok === 'a' ? 1 : 1)] === 'hundred') {
+      let value = (tok === 'a' ? 1 : NUM_WORDS[tok]) * 100;
+      i += 2;
+      if (tokens[i] === 'and') i += 1;
+      if (NUM_WORDS[tokens[i]] !== undefined) {
+        const t = tokens[i];
+        if (TENS_WORDS.has(t)) {
+          value += NUM_WORDS[t];
+          i += 1;
+          if (NUM_WORDS[tokens[i]] >= 1 && NUM_WORDS[tokens[i]] <= 9) { value += NUM_WORDS[tokens[i]]; i += 1; }
+        } else {
+          value += NUM_WORDS[t];
+          i += 1;
+        }
+      }
+      out.push(String(value));
+      continue;
+    }
+    if (isNum) {
       let value = NUM_WORDS[tok];
       const next = tokens[i + 1];
       if (TENS_WORDS.has(tok) && next !== undefined && NUM_WORDS[next] >= 1 && NUM_WORDS[next] <= 9) {
         value += NUM_WORDS[next];
-        out.push(String(value));
         i += 2;
-        continue;
+      } else {
+        i += 1;
       }
       out.push(String(value));
-      i += 1;
-    } else {
-      out.push(tok);
-      i += 1;
+      continue;
     }
+    out.push(tok);
+    i += 1;
   }
   return out.join(' ');
 }
 
-/**
- * Scan a transcript for a spoken scripture reference and return the best match found,
- * or null. Handles forms like:
- *   "genesis 1 1", "genesis chapter 1 verse 1", "genesis 1 verse 1",
- *   "john 3 16", "psalm 23 1", "genesis 1" (chapter only)
- *
- * Deliberately narrow: only looks at the words immediately following a book
- * name (not the whole rolling transcript buffer), so normal sermon speech
- * that happens to mention a book name and an unrelated number later on
- * doesn't get misread as a citation — e.g. "like John, who was baptizing
- * for 40 days" must never turn into "John 40".
- */
-const REFERENCE_WINDOW_WORDS = 4; // e.g. "chapter", "one", "verse", "sixteen"
-
-function findScriptureReference(rawText) {
-  const text = normalizeSpokenNumbers(rawText.toLowerCase().replace(/[.,!?]/g, ' '));
-
-  for (const alias of BOOK_ALIASES) {
-    const idx = text.lastIndexOf(alias);
-    if (idx === -1) continue;
-
-    // Make sure it's a whole-word match
-    const before = text[idx - 1];
-    const after = text[idx + alias.length];
-    if (before && /[a-z]/.test(before)) continue;
-    if (after && /[a-z]/.test(after)) continue;
-
-    // Only look a few words ahead — a number mentioned much later in the
-    // sentence/buffer is unrelated, not part of this citation.
-    const restWords = text.slice(idx + alias.length).trim().split(/\s+/).slice(0, REFERENCE_WINDOW_WORDS);
-    const rest = restWords.join(' ');
-    // Strip connector words like "chapter", "verse", "and", ":"
-    const cleaned = rest.replace(/\b(chapter|verse|and|the)\b/g, ' ').replace(/:/g, ' ');
-    const nums = cleaned.match(/\d+/g);
-    if (!nums || nums.length === 0) continue;
-
-    const book = BIBLE_BOOKS[alias];
-    const chapter = parseInt(nums[0], 10);
-    if (!chapter || chapter < 1 || chapter > 176) continue;
-
-    if (nums.length >= 2) {
-      const verse = parseInt(nums[1], 10);
-      if (verse >= 1 && verse <= 176) {
-        return { reference: `${book} ${chapter}:${verse}`, book, chapter, verse };
-      }
-    }
-    return { reference: `${book} ${chapter}`, book, chapter, verse: null };
+function prepareSpeech(rawText) {
+  let text = rawText.toLowerCase()
+    .replace(/(\d)\s*:\s*(\d)/g, '$1 $2')       // "3:16" -> "3 16"
+    .replace(/[.,!?;"()]/g, ' ')
+    .replace(/:/g, ' ')
+    .replace(/\b(?:the\s+)?book\s+of\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const toks = text.split(' ');
+  for (let k = 0; k < toks.length - 1; k++) {
+    if (ORDINALS[toks[k]] && ORDINAL_BOOKS.test(toks[k + 1])) toks[k] = ORDINALS[toks[k]];
   }
-  return null;
+  text = toks.join(' ');
+  // "one john" / "two kings" etc: leading number word directly before a numbered book
+  text = text.replace(/\b(one|two|three)\s+(samuel|kings|chronicles?|corinthians?|thessalonians?|timothy|peter|john)\b/g,
+    (m, n, b) => ({ one: '1', two: '2', three: '3' }[n]) + ' ' + b);
+  return normalizeSpokenNumbers(text);
+}
+
+/**
+ * Scan a transcript for a spoken scripture reference and return the LATEST one
+ * found, or null. Handles forms like:
+ *   "genesis 1 1", "genesis chapter 1 verse 1", "john 3 16",
+ *   "psalm one nineteen verse one oh five", "romans eight twenty eight",
+ *   "first john four eight", "genesis 1" (chapter only)
+ *
+ * Deliberately narrow: numbers must come immediately after the book name
+ * (only "chapter/verse/and/the" may sit between), so ordinary sermon speech
+ * like "like John, who was baptizing for 40 days" never becomes "John 40".
+ * Returns { reference, book, chapter, verse, hasVerse, pos } — pos is where in
+ * the cleaned text the book name starts, so callers can tell "new" matches
+ * from ones already handled.
+ */
+function findScriptureReference(rawText) {
+  const text = prepareSpeech(rawText);
+  const tokens = text.split(' ');
+  let best = null;
+
+  for (let t = 0; t < tokens.length; t++) {
+    // try longest alias (up to 4 words) starting at token t
+    let alias = null;
+    let len = 0;
+    for (let n = Math.min(4, tokens.length - t); n >= 1; n--) {
+      const cand = tokens.slice(t, t + n).join(' ');
+      if (BIBLE_BOOKS[cand]) { alias = cand; len = n; break; }
+    }
+    if (!alias) continue;
+
+    const nums = [];
+    let k = t + len;
+    let sawVerseWord = false;
+    while (k < tokens.length && nums.length < 2) {
+      const w = tokens[k];
+      if (/^\d+$/.test(w)) { nums.push(parseInt(w, 10)); k++; continue; }
+      if (FILLER.has(w)) { if (/^(verse|verses|versus|vs)$/.test(w)) sawVerseWord = true; k++; continue; }
+      if (w === 'oh' || w === 'o') { // "one oh five" -> 105 is rare; treat "oh N" as 0N
+        const nx = tokens[k + 1];
+        if (nums.length && /^\d$/.test(nx || '')) { nums[nums.length - 1] = nums[nums.length - 1] * 10 + parseInt(nx, 10); k += 2; continue; }
+      }
+      if (HOMOPHONES[w] && (nums.length > 0 || sawVerseWord || tokens[k - 1] === 'chapter')) {
+        nums.push(parseInt(HOMOPHONES[w], 10)); k++; continue;
+      }
+      break;
+    }
+    if (!nums.length) continue;
+    const chapter = nums[0];
+    if (!chapter || chapter < 1 || chapter > 176) continue;
+    const book = BIBLE_BOOKS[alias];
+    let match;
+    if (nums.length >= 2 && nums[1] >= 1 && nums[1] <= 176) {
+      match = { reference: `${book} ${chapter}:${nums[1]}`, book, chapter, verse: nums[1], hasVerse: true, pos: t };
+    } else {
+      match = { reference: `${book} ${chapter}`, book, chapter, verse: null, hasVerse: false, pos: t };
+    }
+    best = match; // later mentions override earlier ones
+    t = k - 1; // skip tokens this match consumed
+  }
+  return best;
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { findScriptureReference, BIBLE_BOOKS };
+  module.exports = { findScriptureReference, BIBLE_BOOKS, normalizeSpokenNumbers, prepareSpeech };
 }
