@@ -1,7 +1,7 @@
 {
   "name": "worship-presenter",
-  "version": "1.0.0",
-  "description": "Worship Presenter \u2014 live worship projection software for RCCG Youth Province 9 (Peculiar Voices). Works online and offline; updates itself.",
+  "version": "1.0.1",
+  "description": "Worship Presenter \u2014 live worship projection software for RCCG Youth Province 9 (Peculiar Treasures). Works online and offline; updates itself.",
   "main": "desktop/main.js",
   "scripts": {
     "start": "node server.js",

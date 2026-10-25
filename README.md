@@ -1,4 +1,4 @@
-# Peculiar Voices — Worship Presenter
+# Peculiar Treasures — Worship Presenter
 
 Live worship projection software: song slides, scripture, media, PowerPoint decks,
 ticker, countdown and alerts — controlled from a laptop or phone, shown on the
