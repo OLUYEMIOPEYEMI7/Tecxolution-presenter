@@ -1473,7 +1473,7 @@ function parseLyricsIntoSections(raw) {
     let label = null;
 
     const firstLine = lines[0] || '';
-    const firstLineIsLabel = /^(chorus|refrain|bridge|intro|outro|verse)\b.*:?$/i.test(firstLine) && firstLine.split(/\s+/).length <= 3;
+    const firstLineIsLabel = /^(chorus|refrain|bridge|intro|outro|pre-?chorus|tag|vamp|verse)\b.*:?$/i.test(firstLine) && firstLine.split(/\s+/).length <= 3;
     if (firstLineIsLabel) {
       label = firstLine.replace(/:$/, '').toUpperCase();
       lines = lines.slice(1);
