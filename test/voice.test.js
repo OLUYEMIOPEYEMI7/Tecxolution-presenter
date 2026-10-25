@@ -23,12 +23,17 @@ test('spoken references parse', () => {
     'as John said then Romans 12 2': 'Romans 12:2',
     'john 3 16 then john 4 1': 'John 4:1', // latest mention wins
     '1 john 5 and john 1': 'John 1',
+    'he brews eleven verse one': 'Hebrews 11:1',
+    'filipians four thirteen': 'Philippians 4:13',
+    'galations five twenty two': 'Galatians 5:22',
+    'habakuk two verse two': 'Habakkuk 2:2',
+    'jeremia 29 11': 'Jeremiah 29:11',
   };
   for (const [said, want] of Object.entries(cases)) assert.strictEqual(ref(said), want, said);
 });
 
 test('ordinary sermon speech is not a reference', () => {
-  for (const t of ['like John, who was baptizing for 40 days', 'mark my words 5 times', 'we have job to do', 'amos was a shepherd']) {
+  for (const t of ['like John, who was baptizing for 40 days', 'mark my words 5 times', 'we have job to do', 'amos was a shepherd', 'the president said 5 things', 'matter 5 times', 'people 3 of them']) {
     assert.strictEqual(ref(t), null, t);
   }
 });
@@ -57,7 +62,7 @@ test('detector fires on a stable INTERIM result, quickly, and waits for the vers
   MockRec.last.onresult(evt(['open to john 3 16'], false));
   await wait(450);
   assert.deepStrictEqual(fired.map((f) => f[0]), ['John 3:16']);
-  assert.ok(fired[0][1] - t0 < 800, 'fired within 0.8s of the first interim');
+  assert.ok(fired[0][1] - t0 < 600, 'fired within 0.6s of the first interim');
   assert.deepStrictEqual(cand, ['John 3', 'John 3:16']);
   // final result fires immediately
   MockRec.last.onresult(evt(['romans eight twenty eight'], true));

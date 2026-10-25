@@ -23,9 +23,9 @@ class VoiceDetector {
     this.listening = false;
     this.lastFiredRef = null;
     this.lastFiredAt = 0;
-    this.cooldownMs = 8000; // don't re-fire the same reference within 8s
-    this.verseHoldMs = 300; // a reference WITH a verse fires once it has been stable this long
-    this.chapterHoldMs = 1100; // chapter-only ("John 3") waits for a possible verse to follow
+    this.cooldownMs = 5000; // don't re-fire the same reference within 5s
+    this.verseHoldMs = 150; // a reference WITH a verse fires once it has been stable this long
+    this.chapterHoldMs = 750; // chapter-only ("John 3") waits for a possible verse to follow
     this.rollingBuffer = '';
     this.pending = null; // { match, timer }
     this.lastResultAt = 0;
@@ -62,6 +62,13 @@ class VoiceDetector {
     this.recognition.interimResults = true;
     this.recognition.maxAlternatives = 3; // lets us pick the alternative that parses as a reference
     this.recognition.lang = this.lang;
+    // Chrome 139+: bias the recogniser toward Bible book names (ignored elsewhere).
+    try {
+      if (window.SpeechRecognitionPhrase && 'phrases' in this.recognition) {
+        const books = Array.from(new Set(Object.values(BIBLE_BOOKS)));
+        this.recognition.phrases = books.map((b) => new window.SpeechRecognitionPhrase(b, 6));
+      }
+    } catch (e) {}
 
     this.recognition.onresult = (event) => {
       this.lastResultAt = Date.now();

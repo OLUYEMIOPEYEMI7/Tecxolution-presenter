@@ -70,7 +70,7 @@ const BIBLE_BOOKS = {
   revelation: 'Revelation', revelations: 'Revelation', rev: 'Revelation',
   // common plural / mis-hearings from speech engines
   roman: 'Romans', galatian: 'Galatians', ephesian: 'Ephesians', efesians: 'Ephesians',
-  philippian: 'Philippians', colossian: 'Colossians', hebrew: 'Hebrews', proverb: 'Proverbs',
+  filipians: 'Philippians', filippians: 'Philippians', philipians: 'Philippians', phillipians: 'Philippians', filipinos: 'Philippians', philippian: 'Philippians', colossian: 'Colossians', hebrew: 'Hebrews', proverb: 'Proverbs',
   lamentation: 'Lamentations', salm: 'Psalm', some: null, 'songs of solomon': 'Song of Solomon',
   'song of songs': 'Song of Solomon', canticles: 'Song of Solomon',
   '1 corinthian': '1 Corinthians', '2 corinthian': '2 Corinthians',
@@ -181,6 +181,40 @@ function prepareSpeech(rawText) {
  * the cleaned text the book name starts, so callers can tell "new" matches
  * from ones already handled.
  */
+// ---- fuzzy book-name matching (speech engines mishear / split names) ----
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+const FUZZY_ALIASES = Object.keys(BIBLE_BOOKS).filter((a) => /^[a-z]{5,}$/.test(a));
+// Returns { alias, len } for a near-miss at tokens[t], or null. Tries the
+// token alone and joined with the next one ("he brews" -> hebrews).
+function fuzzyBook(tokens, t) {
+  const tries = [[tokens[t], 1]];
+  if (tokens[t + 1] && /^[a-z]+$/.test(tokens[t + 1])) tries.push([tokens[t] + tokens[t + 1], 2]);
+  for (const [w, len] of tries) {
+    if (!/^[a-z]{5,}$/.test(w)) continue;
+    const limit = w.length >= 8 ? 2 : 1;
+    let bestA = null, bestD = 99, tie = false;
+    for (const a of FUZZY_ALIASES) {
+      if (Math.abs(a.length - w.length) > limit) continue;
+      const d = editDistance(w, a);
+      if (d < bestD) { bestD = d; bestA = a; tie = false; }
+      else if (d === bestD && BIBLE_BOOKS[a] !== BIBLE_BOOKS[bestA]) tie = true;
+    }
+    if (bestA && bestD <= limit && !tie) return { alias: bestA, len };
+  }
+  return null;
+}
+
 function findScriptureReference(rawText) {
   const text = prepareSpeech(rawText);
   const tokens = text.split(' ');
@@ -194,7 +228,11 @@ function findScriptureReference(rawText) {
       const cand = tokens.slice(t, t + n).join(' ');
       if (BIBLE_BOOKS[cand]) { alias = cand; len = n; break; }
     }
-    if (!alias) continue;
+    if (!alias) {
+      const fz = fuzzyBook(tokens, t);
+      if (!fz) continue;
+      alias = fz.alias; len = fz.len;
+    }
 
     const nums = [];
     let k = t + len;
@@ -229,5 +267,5 @@ function findScriptureReference(rawText) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { findScriptureReference, BIBLE_BOOKS, normalizeSpokenNumbers, prepareSpeech };
+  module.exports = { findScriptureReference, fuzzyBook, BIBLE_BOOKS, normalizeSpokenNumbers, prepareSpeech };
 }
