@@ -357,6 +357,22 @@
           </select>
         </div>
         <div id="voice-heard" class="voice-heard" style="display:none;"></div>
+        <div class="style-row" id="voice-engine-row" style="margin:0 0 8px;">
+          <label>Voice engine
+            <select id="voice-engine">
+              <option value="deepgram">Deepgram — most accurate (paid, a few dollars a month)</option>
+              <option value="browser">Browser — free (Chrome / Edge only)</option>
+            </select></label>
+        </div>
+        <div id="dg-setup" class="dg-setup">
+          <div id="dg-state" class="dg-state warn">Checking…</div>
+          <div class="tpl-save" style="margin-top:6px;">
+            <input type="password" id="dg-key" class="form-input" placeholder="Paste your Deepgram API key" autocomplete="off" style="font-size:12px; padding:7px 10px;" />
+            <button type="button" id="dg-save">Save key</button>
+            <button type="button" class="secondary" id="dg-remove" hidden>Remove</button>
+          </div>
+          <p class="hint" style="margin:6px 0 10px;">Get a key at <b>console.deepgram.com</b> — new accounts get $200 free credit. The key is stored encrypted on the server and is never shown again. It stops listening by itself after 10 quiet minutes to save credit.</p>
+        </div>
         <p style="font-size:11px; color:#888; margin:0 0 8px;">
           Listens for spoken references like "Genesis chapter one verse one" and projects them automatically (bypasses Preview — goes straight Live).
           Uncheck Auto-project to require a confirm click instead.

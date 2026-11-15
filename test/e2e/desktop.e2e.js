@@ -78,7 +78,7 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   // ---- cloud sync through the real UI
   await win.click('#tabbtn-tools');
   ok('cloud box present in Tools', await win.locator('#cloud-box').isVisible());
-  ok('Voice Detect disabled with an explanation', await win.locator('#voice-start-btn').isDisabled() && await win.locator('.desktop-note').count() === 1);
+  ok('Voice Detect in the app is Deepgram-only, with an explanation', await win.locator('#voice-engine').inputValue() === 'deepgram' && await win.evaluate(() => document.querySelector('#voice-engine option[value="browser"]').disabled) && await win.locator('.desktop-note').count() === 1);
   await win.fill('#cloud-url', 'http://127.0.0.1:4950'); await win.fill('#cloud-pass', 'wrong');
   await win.click('#cloud-save'); await wait(1500);
   ok('a wrong cloud password is refused', !(await win.evaluate(() => window.desktop.sync.status())).configured);

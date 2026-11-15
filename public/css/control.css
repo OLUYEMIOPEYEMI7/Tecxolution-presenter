@@ -313,3 +313,8 @@ body.simple-mode #tabbtn-media, body.simple-mode #tabbtn-tools { display: none; 
 .tour-actions { display: flex; gap: 8px; align-items: center; }
 .header-right .out-chip, .header-right #lock-btn { white-space: nowrap; }
 .header-right #lock-btn { padding: 8px 12px; }
+
+/* Voice engine / Deepgram key */
+.dg-state { font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
+.dg-state.ok { background: #12301f; color: #6ee7a0; border: 1px solid #2f9e62; }
+.dg-state.warn { background: #2c2c13; color: #f2c14e; border: 1px solid #6b5420; }

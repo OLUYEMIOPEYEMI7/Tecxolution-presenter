@@ -1558,6 +1558,12 @@ function showVoiceHeard(text, cls) {
 }
 
 const voiceDetector = new VoiceDetector({
+  socket,
+  onStopped: () => {
+    const btn = document.getElementById('voice-start-btn');
+    btn.textContent = 'Start Listening';
+    btn.classList.remove('danger');
+  },
   lang: (function () { try { return localStorage.getItem('wp_voice_lang') || 'en-NG'; } catch (e) { return 'en-NG'; } })(),
   onTranscript: (text) => {
     const el = document.getElementById('voice-transcript');
@@ -1594,6 +1600,53 @@ function setVoiceLang(lang) {
   voiceDetector.setLanguage(lang);
 }
 
+// ---- Voice engine: Deepgram (premium, via the server) or the browser's free one.
+const dgState = { configured: false, source: null, last4: null };
+function paintDeepgram() {
+  const st = document.getElementById('dg-state');
+  const rm = document.getElementById('dg-remove');
+  if (!st) return;
+  if (dgState.configured) {
+    st.className = 'dg-state ok';
+    st.textContent = '✓ Deepgram key saved (…' + dgState.last4 + ')' + (dgState.source === 'env' ? ' — set on the server' : '');
+    rm.hidden = dgState.source === 'env';
+  } else {
+    st.className = 'dg-state warn';
+    st.textContent = 'No Deepgram key yet — the free browser engine will be used.';
+    rm.hidden = true;
+  }
+}
+function loadVoiceStatus() {
+  return fetch('/api/voice/status').then((r) => r.json()).then((d) => {
+    Object.assign(dgState, d);
+    paintDeepgram();
+    const sel = document.getElementById('voice-engine');
+    let pref = null; try { pref = localStorage.getItem('wp_voice_engine'); } catch (e) {}
+    sel.value = pref === 'browser' || pref === 'deepgram' ? pref : (d.configured ? 'deepgram' : 'browser');
+    sel.dispatchEvent(new Event('change'));
+  }).catch(() => {});
+}
+document.getElementById('voice-engine').addEventListener('change', (e) => {
+  try { localStorage.setItem('wp_voice_engine', e.target.value); } catch (x) {}
+  document.getElementById('dg-setup').style.display = e.target.value === 'deepgram' || !dgState.configured ? 'block' : 'none';
+});
+document.getElementById('dg-save').addEventListener('click', () => {
+  const input = document.getElementById('dg-key');
+  const key = input.value.trim();
+  if (!key) { input.focus(); return; }
+  const btn = document.getElementById('dg-save'); btn.disabled = true; btn.textContent = 'Checking…';
+  fetch('/api/voice/key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) })
+    .then((r) => r.json().then((d) => { if (!r.ok) throw new Error(d.error || 'Could not save'); return d; }))
+    .then((d) => { input.value = ''; Object.assign(dgState, d); paintDeepgram(); document.getElementById('voice-engine').value = 'deepgram'; document.getElementById('voice-engine').dispatchEvent(new Event('change')); if (window.toast) toast(d.warning || 'Deepgram key saved — Voice Detect is ready'); })
+    .catch((e) => alert(e.message))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Save key'; });
+});
+document.getElementById('dg-remove').addEventListener('click', () => {
+  if (!confirm('Remove the saved Deepgram key? Voice Detect will fall back to the free browser engine.')) return;
+  fetch('/api/voice/key', { method: 'DELETE' }).then((r) => r.json()).then((d) => { Object.assign(dgState, d); paintDeepgram(); document.getElementById('voice-engine').value = 'browser'; if (voiceDetector.listening) toggleVoiceDetect(); });
+});
+loadVoiceStatus();
+
 function toggleVoiceDetect() {
   const btn = document.getElementById('voice-start-btn');
   if (voiceDetector.listening) {
@@ -1601,6 +1654,12 @@ function toggleVoiceDetect() {
     btn.textContent = 'Start Listening';
     btn.classList.remove('danger');
   } else {
+    voiceDetector.engine = document.getElementById('voice-engine').value;
+    if (voiceDetector.engine === 'deepgram' && !dgState.configured) {
+      document.getElementById('voice-status').textContent = 'Paste your Deepgram API key below first (or choose the free browser engine).';
+      document.getElementById('dg-key').focus();
+      return;
+    }
     voiceDetector.start();
     btn.textContent = 'Stop Listening';
     btn.classList.add('danger');

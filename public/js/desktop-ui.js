@@ -50,11 +50,14 @@
   } catch (e) {}
   const vbtn = $('voice-start-btn');
   if (vbtn) {
-    vbtn.disabled = true;
+    // The free browser engine needs Chrome's cloud speech; in the app Voice Detect runs on Deepgram.
+    const opt = document.querySelector('#voice-engine option[value="browser"]');
+    if (opt) { opt.disabled = true; opt.textContent = 'Browser — not available in the app'; }
+    const sel = $('voice-engine'); if (sel) { sel.value = 'deepgram'; try { localStorage.setItem('wp_voice_engine', 'deepgram'); } catch (e) {} }
     const box = vbtn.closest('.scripture-box');
     const note = document.createElement('div');
     note.className = 'desktop-note';
-    note.innerHTML = '<b>Voice Detect isn\'t available in the desktop app</b> — it needs Chrome\'s cloud speech service. To use it, choose <b>Tools ▸ Open control room in Chrome/Edge</b> in the app menu (press <kbd>Alt</kbd> to show the menu).';
+    note.innerHTML = '<b>In the desktop app, Voice Detect uses Deepgram.</b> Paste your Deepgram key below (it needs internet while listening). The free browser engine is only in Chrome/Edge: <b>Tools ▸ Open control room in Chrome/Edge</b> in the app menu.';
     box.prepend(note);
   }
 

@@ -27,7 +27,8 @@
     "multer": "^2.4.0",
     "p-limit": "^7.3.3",
     "pg": "^8.23.1",
-    "socket.io": "^4.8.4"
+    "socket.io": "^4.8.4",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "electron": "^41.10.7",

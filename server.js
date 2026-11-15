@@ -9,6 +9,8 @@ const compression = require('compression');
 const { Pool } = require('pg');
 const cheerio = require('cheerio');
 const sec = require('./lib/security');
+const secretbox = require('./lib/secretbox');
+const deepgram = require('./lib/deepgram');
 const storage = require('./lib/storage');
 const lyricsLib = require('./lib/lyrics');
 const offlineBible = require('./lib/bible-offline');
@@ -721,6 +723,7 @@ const whoOf = (req) => sec.roleFromCookieHeader(req.headers.cookie);
 // Connected output screens (projector / stage monitor), so the operator can see
 // at a glance whether the church screen is actually connected.
 const outputs = { display: new Set(), stage: new Set() };
+let dgActive = 0; // open Deepgram sessions (safety cap)
 function outputCounts() { return { projectors: outputs.display.size, stages: outputs.stage.size }; }
 function emitOutputs() { io.to('controllers').to('remotes').emit('outputs', outputCounts()); }
 // Back / forward through what has been on the projector (undo a wrong slide or an accidental Clear).
@@ -893,6 +896,65 @@ app.use('/api', (req, res, next) => {
   // Remote (volunteer) sign-ins may only READ the schedule, for the phone remote.
   if (req.method === 'GET' && p === '/api/schedule') return sec.requireAnyRole(req, res, next);
   return sec.requireOperator(req, res, next);
+});
+
+// ---- Voice Detect, premium engine: Deepgram. The API key comes from the
+// DEEPGRAM_API_KEY environment variable, or is pasted once in Tools ▸ Voice Detect
+// and stored ENCRYPTED. It is never sent back to any browser. ----
+const voiceKeyPath = path.join(DATA_DIR, 'voice-key.json');
+const boxSecret = () => process.env.SECRETBOX_KEY || process.env.OPERATOR_PASSWORD || 'dev-only-not-a-secret';
+let savedVoiceKey; // undefined = not loaded yet, null = none
+async function loadSavedVoiceKey() {
+  if (savedVoiceKey !== undefined) return savedVoiceKey;
+  let enc = null;
+  try {
+    if (pool) {
+      const { rows } = await pool.query("SELECT value FROM wp_state WHERE key = 'voice'");
+      enc = rows[0] && rows[0].value && rows[0].value.enc;
+    } else {
+      enc = readJsonFile(voiceKeyPath, {}).enc;
+    }
+  } catch (e) { console.error('Could not read the saved voice key:', e.message); }
+  savedVoiceKey = enc ? secretbox.decrypt(enc, boxSecret()) : null;
+  if (enc && !savedVoiceKey) console.warn('Saved Deepgram key could not be decrypted (the server secret changed) — paste it again in Tools.');
+  return savedVoiceKey;
+}
+async function getVoiceKey() {
+  if (process.env.DEEPGRAM_API_KEY) return { key: process.env.DEEPGRAM_API_KEY.trim(), source: 'env' };
+  const k = await loadSavedVoiceKey();
+  return k ? { key: k, source: 'saved' } : { key: null, source: null };
+}
+async function saveVoiceKey(key) {
+  const enc = key ? secretbox.encrypt(key, boxSecret()) : null;
+  if (pool) {
+    if (enc) await pool.query(`INSERT INTO wp_state (key, value, updated_at) VALUES ('voice', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [JSON.stringify({ enc })]);
+    else await pool.query("DELETE FROM wp_state WHERE key = 'voice'");
+  } else if (enc) writeJsonFile(voiceKeyPath, { enc });
+  else { try { fs.unlinkSync(voiceKeyPath); } catch (e) {} }
+  savedVoiceKey = key || null;
+}
+const voiceStatus = async () => {
+  const { key, source } = await getVoiceKey();
+  return { configured: !!key, source, last4: key ? key.slice(-4) : null };
+};
+app.get('/api/voice/status', async (req, res) => res.json(await voiceStatus()));
+app.post('/api/voice/key', async (req, res) => {
+  const key = String((req.body && req.body.key) || '').trim();
+  if (!/^[A-Za-z0-9_-]{20,128}$/.test(key)) return res.status(400).json({ error: 'That does not look like a Deepgram API key.' });
+  const check = await deepgram.checkKey(key);
+  if (check === 'rejected') return res.status(400).json({ error: 'Deepgram rejected this key — check you copied all of it.' });
+  try {
+    await saveVoiceKey(key);
+    logAct(whoOf(req), 'Deepgram voice key saved');
+    res.json({ ok: true, warning: check === 'unreachable' ? 'Saved, but I could not reach Deepgram to confirm it right now.' : null, ...(await voiceStatus()) });
+  } catch (e) { res.status(500).json({ error: 'Could not save the key: ' + e.message }); }
+});
+app.delete('/api/voice/key', async (req, res) => {
+  try {
+    await saveVoiceKey(null);
+    logAct(whoOf(req), 'Deepgram voice key removed');
+    res.json({ ok: true, ...(await voiceStatus()) });
+  } catch (e) { res.status(500).json({ error: 'Could not remove the key: ' + e.message }); }
 });
 
 app.get('/api/activity', (req, res) => res.json({ items: activity.slice(-100) }));
@@ -1787,6 +1849,38 @@ io.on('connection', (socket) => {
     emitLiveNav();
     persistState();
   }, 'live-forward'));
+
+  // ---- Deepgram live transcription for Voice Detect (operator only) ----
+  let dgSession = null;
+  const dgStop = () => { if (dgSession) { dgSession.close(); dgSession = null; } };
+  socket.on('dg-start', guard(async (opts) => {
+    dgStop();
+    const { key } = await getVoiceKey();
+    if (!key) return socket.emit('dg-status', { state: 'error', reason: 'nokey', message: 'No Deepgram key yet — add it in Tools ▸ Voice Detect.' });
+    if (dgActive >= 3) return socket.emit('dg-status', { state: 'error', reason: 'busy', message: 'Too many voice sessions are open.' });
+    dgActive++;
+    let counted = true;
+    const done = () => { if (counted) { counted = false; dgActive--; } };
+    dgSession = new deepgram.DeepgramSession({
+      key,
+      lang: String((opts && opts.lang) || 'en').slice(0, 8),
+      onStatus: (st) => socket.emit('dg-status', st),
+      onResult: (r) => socket.emit('dg-result', r),
+      onClosed: (reason, message) => { done(); dgSession = null; socket.emit('dg-status', { state: 'closed', reason, message }); },
+    });
+    const sess = dgSession;
+    const origClose = sess.close.bind(sess);
+    sess.close = () => { done(); origClose(); };
+    logAct(socket.data.role, 'Voice Detect (Deepgram) started');
+  }, 'dg-start'));
+  socket.on('dg-audio', guard((buf) => {
+    if (!dgSession) return;
+    const b = Buffer.isBuffer(buf) ? buf : buf instanceof ArrayBuffer ? Buffer.from(buf) : null;
+    if (!b || b.length === 0 || b.length > 32768) return;
+    dgSession.send(b);
+  }, 'dg-audio'));
+  socket.on('dg-stop', guard(() => { if (dgSession) logAct(socket.data.role, 'Voice Detect (Deepgram) stopped'); dgStop(); }, 'dg-stop'));
+  socket.on('disconnect', dgStop);
 
   socket.on('clear', guard(() => {
     setLive({ type: 'blank' });
