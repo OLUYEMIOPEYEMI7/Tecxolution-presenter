@@ -891,7 +891,13 @@ function applyFreeTextStyle(st) {
   document.getElementById('ft-align').value = st.align || '';
   document.getElementById('ft-bold').checked = st.bold !== false;
 }
+// What the projector is showing right now (so style changes can reach it).
+let liveStateNow = null;
+socket.on('live-state', (st) => { liveStateNow = st; });
+
 function restageFreeTextIfShowing() {
+  // Free text already ON the projector: change its look live, no re-send.
+  if (liveStateNow && liveStateNow.type === 'free-text') socket.emit('live-style', readFreeTextStyle());
   // If the preview currently holds this free text, refresh it so the
   // operator sees size/colour/alignment changes immediately.
   if (lastStagedState && lastStagedState.type === 'free-text') {
@@ -1699,6 +1705,21 @@ function updateTickerBtn() {
   btn.textContent = tickerActive ? '■ Stop Scrolling' : '▶ Start Scrolling';
   btn.classList.toggle('danger', tickerActive);
 }
+
+// Keep this page in step with the projector's ticker (e.g. after a reload
+// while it is running) so the size/colour controls still drive it.
+socket.on('ticker-state', (t) => {
+  if (!t) return;
+  tickerActive = !!t.active;
+  updateTickerBtn();
+  const box = document.getElementById('ticker-input');
+  if (t.text && document.activeElement !== box) box.value = t.text;
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#tk-style')) return; // don't fight the operator's drag
+  const set = (id, v) => { if (v !== undefined && v !== '') document.getElementById(id).value = v; };
+  set('tk-size', t.size); set('tk-color', t.color); set('tk-bg', t.bg); set('tk-align', t.align); set('tk-speed', t.speed);
+  document.getElementById('tk-scroll').checked = t.scroll !== false;
+  document.getElementById('tk-size-val').textContent = document.getElementById('tk-size').value + '%';
+});
 
 function readTickerStyle() {
   return {

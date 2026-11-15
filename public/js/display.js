@@ -211,16 +211,18 @@ window.addEventListener('resize', () => { fitContent(); applyImageLayout(); });
 
 // Image fit / rotate / zoom (settings from the control room). Rotating by
 // 90/270 swaps the box so the picture still fits the screen.
-let imgSettings = { rotate: 0, zoom: 100 };
+let imgSettings = { rotate: 0, zoom: 100, x: 0, y: 0 };
 function applyImageLayout() {
   const r = imgSettings.rotate, z = (imgSettings.zoom || 100) / 100;
   const sw = stage.clientWidth, sh = stage.clientHeight;
+  // Pan is in % of the screen, applied after rotate/zoom so "right" is always screen-right.
+  const pan = `translate(${(imgSettings.x || 0) * sw / 100}px, ${(imgSettings.y || 0) * sh / 100}px)`;
   if (r % 180) {
     Object.assign(stageImage.style, { inset: 'auto', left: '50%', top: '50%', width: sh + 'px', height: sw + 'px',
-      transform: `translate(-50%,-50%) rotate(${r}deg) scale(${z})` });
+      transform: `${pan} translate(-50%,-50%) rotate(${r}deg) scale(${z})` });
   } else {
     Object.assign(stageImage.style, { inset: '0', left: '', top: '', width: '100%', height: '100%',
-      transform: (r || z !== 1) ? `rotate(${r}deg) scale(${z})` : '' });
+      transform: (r || z !== 1 || imgSettings.x || imgSettings.y) ? `${pan} rotate(${r}deg) scale(${z})` : '' });
   }
 }
 
@@ -283,7 +285,7 @@ socket.on('settings-state', (s) => {
   root.dataset.pos = s.position || 'middle';
   root.dataset.imgFit = s.imageFit || 'contain';
   root.dataset.imgBg = s.imageBg || 'black';
-  imgSettings = { rotate: s.imageRotate || 0, zoom: s.imageZoom || 100 };
+  imgSettings = { rotate: s.imageRotate || 0, zoom: s.imageZoom || 100, x: s.imageX || 0, y: s.imageY || 0 };
   applyImageLayout();
   fitContent();
 });

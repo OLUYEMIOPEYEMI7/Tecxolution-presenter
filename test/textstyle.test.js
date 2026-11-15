@@ -18,7 +18,12 @@ test('ticker look is validated', () => {
 
 test('image display settings are validated', () => {
   const s = sec.cleanSettings({ imageFit: 'cover', imageBg: 'blur', imageRotate: 90, imageZoom: 999 });
-  assert.deepStrictEqual([s.imageFit, s.imageBg, s.imageRotate, s.imageZoom], ['cover', 'blur', 90, 250]);
+  assert.deepStrictEqual([s.imageFit, s.imageBg, s.imageRotate, s.imageZoom], ['cover', 'blur', 90, 400]);
   const d = sec.cleanSettings({ imageFit: 'url(x)', imageBg: 'red', imageRotate: 45, imageZoom: 'abc' });
   assert.deepStrictEqual([d.imageFit, d.imageBg, d.imageRotate, d.imageZoom], ['contain', 'black', 0, 100]);
+});
+
+test('image pan/zoom range is validated', () => {
+  const s = sec.cleanSettings({ imageZoom: 9999, imageX: -500, imageY: 33.4 });
+  assert.deepStrictEqual([s.imageZoom, s.imageX, s.imageY], [400, -100, 33]);
 });

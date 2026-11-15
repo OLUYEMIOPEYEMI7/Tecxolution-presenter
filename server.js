@@ -1593,6 +1593,15 @@ io.on('connection', (socket) => {
     persistState();
   }, 'project'));
 
+  // Change the look of free text that is ALREADY on the projector (size /
+  // colour / alignment) without re-sending the whole slide or adding history.
+  socket.on('live-style', guard((payload) => {
+    if (!liveState || liveState.type !== 'free-text') return;
+    liveState = { ...liveState, style: sec.cleanTextStyle(payload) };
+    io.emit('live-state', liveState);
+    persistState();
+  }, 'live-style'));
+
   socket.on('clear', guard(() => {
     liveState = { type: 'blank' };
     overlayMode = 'none';

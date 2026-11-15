@@ -183,7 +183,7 @@
   enhanceSchedule();
 
   // -------------------------------------------------- typography settings
-  let settings = { fontScale: 1, fontFamily: 'sans', align: 'center', caps: false, shadow: 1, position: 'middle', lineSpacing: 1.32, imageFit: 'contain', imageBg: 'black', imageRotate: 0, imageZoom: 100 };
+  let settings = { fontScale: 1, fontFamily: 'sans', align: 'center', caps: false, shadow: 1, position: 'middle', lineSpacing: 1.32, imageFit: 'contain', imageBg: 'black', imageRotate: 0, imageZoom: 100, imageX: 0, imageY: 0 };
   function sendSettings(patch) { settings = { ...settings, ...patch }; socket.emit('settings-update', patch); }
   socket.on('settings-state', (st) => {
     settings = { ...settings, ...st };
@@ -193,8 +193,11 @@
     $('set-shadow').value = String(settings.shadow);
     $('set-caps').checked = !!settings.caps;
     $('img-fit').value = settings.imageFit; $('img-bg').value = settings.imageBg;
-    $('img-rot').value = String(settings.imageRotate); $('img-zoom').value = settings.imageZoom;
+    $('img-rot').value = String(settings.imageRotate); if (!(document.activeElement && document.activeElement.id === 'img-zoom')) $('img-zoom').value = settings.imageZoom;
     $('img-zoom-val').textContent = settings.imageZoom + '%';
+    const draggingImg = document.activeElement && document.activeElement.closest && document.activeElement.closest('#img-display');
+    if (!draggingImg) { $('img-x').value = settings.imageX; $('img-y').value = settings.imageY; }
+    $('img-x-val').textContent = settings.imageX; $('img-y-val').textContent = settings.imageY;
     $('line-spacing').value = Math.round(settings.lineSpacing * 100);
     $('line-spacing-val').textContent = Number(settings.lineSpacing).toFixed(2).replace(/0$/, '');
   });
@@ -209,10 +212,23 @@
   let izDebounce = null;
   $('img-zoom').addEventListener('input', (e) => {
     $('img-zoom-val').textContent = e.target.value + '%';
+    const v = Number(e.target.value);
     clearTimeout(izDebounce);
-    izDebounce = setTimeout(() => sendSettings({ imageZoom: Number(e.target.value) }), 80);
+    izDebounce = setTimeout(() => sendSettings({ imageZoom: v }), 80);
   });
-  $('img-reset').addEventListener('click', () => sendSettings({ imageFit: 'contain', imageBg: 'black', imageRotate: 0, imageZoom: 100 }));
+  ['x', 'y'].forEach((ax) => {
+    let t = null;
+    $('img-' + ax).addEventListener('input', (e) => {
+      $('img-' + ax + '-val').textContent = e.target.value;
+      const v = Number(e.target.value);
+      clearTimeout(t);
+      t = setTimeout(() => sendSettings({ ['image' + ax.toUpperCase()]: v }), 60);
+    });
+  });
+  const bumpZoom = (d) => { const z = Math.min(400, Math.max(50, (settings.imageZoom || 100) + d)); $('img-zoom').value = z; $('img-zoom-val').textContent = z + '%'; sendSettings({ imageZoom: z }); };
+  $('img-zoom-in').addEventListener('click', () => bumpZoom(10));
+  $('img-zoom-out').addEventListener('click', () => bumpZoom(-10));
+  $('img-reset').addEventListener('click', () => sendSettings({ imageFit: 'contain', imageBg: 'black', imageRotate: 0, imageZoom: 100, imageX: 0, imageY: 0 }));
   let lsDebounce = null;
   $('line-spacing').addEventListener('input', (e) => {
     $('line-spacing-val').textContent = (e.target.value / 100).toFixed(2).replace(/0$/, '');
