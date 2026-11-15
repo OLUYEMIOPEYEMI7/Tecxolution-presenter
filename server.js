@@ -707,6 +707,10 @@ let timerState = { active: false, mode: 'down', target: 0, label: '', onDisplay:
 let settingsState = sec.cleanSettings({});
 let alertState = { text: '', until: 0 };
 let history = []; // recently shown items, newest first
+// Back / forward through what has been on the projector (undo a wrong slide or an accidental Clear).
+let backStack = [];
+let fwdStack = [];
+const BACK_MAX = 25;
 let alertTimer = null;
 
 function titleOf(st) {
@@ -718,6 +722,22 @@ function titleOf(st) {
   if (st.type === 'video') return 'Video';
   return st.type;
 }
+function sameLive(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function setLive(next) {
+  if (liveState && liveState.type !== 'blank' && !sameLive(liveState, next)) {
+    backStack.push(liveState);
+    if (backStack.length > BACK_MAX) backStack.shift();
+  }
+  fwdStack = [];
+  liveState = next;
+}
+function liveNav() {
+  const prev = backStack[backStack.length - 1];
+  const nxt = fwdStack[fwdStack.length - 1];
+  return { canBack: !!prev, backTitle: prev ? titleOf(prev) : '', canForward: !!nxt, forwardTitle: nxt ? (nxt.type === 'blank' ? 'Cleared screen' : titleOf(nxt)) : '' };
+}
+function emitLiveNav() { io.to('controllers').to('remotes').emit('live-nav', liveNav()); }
+
 function pushHistory(st) {
   if (!st || st.type === 'blank') return;
   const key = JSON.stringify([st.type, st._displayTitle, st.reference, st.text, st.url, st.pairs]);
@@ -1471,27 +1491,121 @@ app.get('/api/schedule', async (req, res) => {
   }
 });
 
-app.post('/api/schedule', async (req, res) => {
-  const { displayTitle, stateType } = req.body;
+// Whitelisted schedule item (never an arbitrary client blob). Returns null if invalid.
+function cleanScheduleItem(body) {
+  const { displayTitle, stateType } = body || {};
   const TYPES = ['song', 'whole-song', 'scripture-ref', 'media-image', 'media-video', 'media-deck', 'free-text'];
-  if (!displayTitle || !TYPES.includes(stateType)) return res.status(400).json({ error: 'displayTitle and a valid stateType are required' });
-  // Only whitelisted fields are stored — never an arbitrary client blob.
+  if (!displayTitle || !TYPES.includes(stateType)) return null;
   const item_ = { displayTitle: sec.str(displayTitle, 200), stateType };
   if (stateType === 'song') {
-    item_.state = sec.sanitizeState(req.body.state);
-    if (!item_.state) return res.status(400).json({ error: 'invalid slide' });
+    item_.state = sec.sanitizeState(body.state);
+    if (!item_.state) return null;
   }
-  if (stateType === 'whole-song') item_.songId = sec.str(req.body.songId, 200);
-  if (stateType === 'scripture-ref') item_.ref = sec.str(req.body.ref, 80);
-  if (stateType === 'media-image' || stateType === 'media-video') item_.url = sec.safeUrl(req.body.url);
-  if (stateType === 'media-deck') item_.deckId = sec.str(req.body.deckId, 100);
-  if (stateType === 'free-text') { item_.text = sec.str(req.body.text, 6000); item_.style = sec.cleanTextStyle(req.body.style); }
+  if (stateType === 'whole-song') item_.songId = sec.str(body.songId, 200);
+  if (stateType === 'scripture-ref') item_.ref = sec.str(body.ref, 80);
+  if (stateType === 'media-image' || stateType === 'media-video') item_.url = sec.safeUrl(body.url);
+  if (stateType === 'media-deck') item_.deckId = sec.str(body.deckId, 100);
+  if (stateType === 'free-text') { item_.text = sec.str(body.text, 6000); item_.style = sec.cleanTextStyle(body.style); }
+  return item_;
+}
+
+app.post('/api/schedule', async (req, res) => {
+  const item_ = cleanScheduleItem(req.body);
+  if (!item_) return res.status(400).json({ error: 'displayTitle and a valid item are required' });
   try {
     const item = await addScheduleRow(item_);
     res.json(item);
   } catch (e) {
     res.status(500).json({ error: 'Could not add to schedule: ' + e.message });
   }
+});
+
+// ---- Service templates: save the schedule as a named order of service
+// ("Sunday 1st service") and load it again any week. ----
+const templatesPath = path.join(DATA_DIR, 'templates.json');
+async function loadTemplates() {
+  if (pool) {
+    try {
+      const { rows } = await pool.query("SELECT value FROM wp_state WHERE key = 'templates'");
+      return (rows[0] && rows[0].value && rows[0].value.items) || [];
+    } catch (e) { console.error('DB read failed for templates:', e.message); }
+  }
+  return readJsonFile(templatesPath, { items: [] }).items;
+}
+async function saveTemplates(items) {
+  if (pool) {
+    await pool.query(
+      `INSERT INTO wp_state (key, value, updated_at) VALUES ('templates', $1, now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [JSON.stringify({ items })]
+    );
+    return;
+  }
+  writeJsonFile(templatesPath, { items });
+}
+const templateMeta = (t) => ({ id: t.id, name: t.name, count: t.items.length, createdAt: t.createdAt, updatedAt: t.updatedAt, titles: t.items.slice(0, 40).map((i) => i.displayTitle) });
+async function snapshotSchedule() {
+  const rows = await loadScheduleList();
+  return rows.map(({ id, ...rest }) => cleanScheduleItem(rest)).filter(Boolean).slice(0, 200);
+}
+
+app.get('/api/templates', async (req, res) => {
+  try { res.json({ items: (await loadTemplates()).map(templateMeta) }); }
+  catch (e) { res.status(500).json({ error: 'Could not load templates: ' + e.message }); }
+});
+
+// Save the CURRENT schedule as a new template (or overwrite one with the same name).
+app.post('/api/templates', async (req, res) => {
+  const name = sec.str(req.body && req.body.name, 80).trim();
+  if (!name) return res.status(400).json({ error: 'Give the template a name.' });
+  try {
+    const items = await snapshotSchedule();
+    if (!items.length) return res.status(400).json({ error: 'The schedule is empty — add items first.' });
+    const all = await loadTemplates();
+    const now = new Date().toISOString();
+    const existing = all.find((t) => t.name.toLowerCase() === name.toLowerCase());
+    if (existing) { existing.items = items; existing.updatedAt = now; existing.name = name; }
+    else {
+      if (all.length >= 50) return res.status(400).json({ error: 'You can keep up to 50 templates — delete one first.' });
+      all.push({ id: newMediaId('tpl'), name, items, createdAt: now, updatedAt: now });
+    }
+    await saveTemplates(all);
+    res.json({ ok: true, replaced: !!existing, items: all.map(templateMeta) });
+  } catch (e) { res.status(500).json({ error: 'Could not save template: ' + e.message }); }
+});
+
+// Load a template into the schedule: mode "replace" (default) or "append".
+app.post('/api/templates/:id/load', async (req, res) => {
+  try {
+    const t = (await loadTemplates()).find((x) => x.id === req.params.id);
+    if (!t) return res.status(404).json({ error: 'Template not found' });
+    if ((req.body && req.body.mode) !== 'append') await clearScheduleRows();
+    for (const it of t.items) { const c = cleanScheduleItem(it); if (c) await addScheduleRow(c); }
+    res.json({ ok: true, items: await loadScheduleList() });
+  } catch (e) { res.status(500).json({ error: 'Could not load template: ' + e.message }); }
+});
+
+app.put('/api/templates/:id', async (req, res) => {
+  const name = sec.str(req.body && req.body.name, 80).trim();
+  if (!name) return res.status(400).json({ error: 'Give the template a name.' });
+  try {
+    const all = await loadTemplates();
+    const t = all.find((x) => x.id === req.params.id);
+    if (!t) return res.status(404).json({ error: 'Template not found' });
+    t.name = name; t.updatedAt = new Date().toISOString();
+    await saveTemplates(all);
+    res.json({ ok: true, items: all.map(templateMeta) });
+  } catch (e) { res.status(500).json({ error: 'Could not rename: ' + e.message }); }
+});
+
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    const all = await loadTemplates();
+    const rest = all.filter((x) => x.id !== req.params.id);
+    if (rest.length === all.length) return res.status(404).json({ error: 'Template not found' });
+    await saveTemplates(rest);
+    res.json({ ok: true, items: rest.map(templateMeta) });
+  } catch (e) { res.status(500).json({ error: 'Could not delete: ' + e.message }); }
 });
 
 app.put('/api/schedule/reorder', async (req, res) => {
@@ -1563,6 +1677,7 @@ io.on('connection', (socket) => {
   socket.emit('settings-state', settingsState);
   socket.emit('alert-state', alertState.until > Date.now() ? alertState : { text: '', until: 0 });
   socket.emit('whoami', { operator: socket.data.operator, role: socket.data.role });
+  if (socket.data.role) socket.emit('live-nav', liveNav());
   if (socket.data.role) socket.emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
 
   socket.on('hello', (role) => {
@@ -1573,7 +1688,7 @@ io.on('connection', (socket) => {
 
   // Wrap every write handler: operator-only, and never let a bad payload throw.
   // Volunteers (role "remote") get only the live-show verbs, never editing.
-  const REMOTE_OK = new Set(['stage', 'golive', 'clear', 'overlay', 'alert-show', 'remote-cmd']);
+  const REMOTE_OK = new Set(['stage', 'golive', 'clear', 'overlay', 'alert-show', 'remote-cmd', 'live-back', 'live-forward']);
   const guard = (fn, name) => (...args) => {
     const allowed = socket.data.operator || (socket.data.role === 'remote' && REMOTE_OK.has(name));
     if (!allowed) return socket.emit('auth-error', socket.data.role ? 'Not permitted for a remote sign-in' : 'Sign in required');
@@ -1591,9 +1706,10 @@ io.on('connection', (socket) => {
 
   // Promote whatever is currently staged in Preview to Live
   socket.on('golive', guard(() => {
-    liveState = previewState;
+    setLive(previewState);
     pushHistory(liveState);
     io.emit('live-state', liveState);
+    emitLiveNav();
     io.to('controllers').to('remotes').emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
     persistState();
   }, 'golive'));
@@ -1602,9 +1718,10 @@ io.on('connection', (socket) => {
   socket.on('project', guard((payload) => {
     const st = sec.sanitizeState(payload);
     if (!st) return;
-    liveState = st;
+    setLive(st);
     pushHistory(liveState);
     io.emit('live-state', liveState);
+    emitLiveNav();
     io.to('controllers').to('remotes').emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
     persistState();
   }, 'project'));
@@ -1618,10 +1735,29 @@ io.on('connection', (socket) => {
     persistState();
   }, 'live-style'));
 
+  socket.on('live-back', guard(() => {
+    if (!backStack.length) return;
+    fwdStack.push(liveState);
+    liveState = backStack.pop();
+    io.emit('live-state', liveState);
+    emitLiveNav();
+    persistState();
+  }, 'live-back'));
+
+  socket.on('live-forward', guard(() => {
+    if (!fwdStack.length) return;
+    if (liveState && liveState.type !== 'blank') backStack.push(liveState);
+    liveState = fwdStack.pop();
+    io.emit('live-state', liveState);
+    emitLiveNav();
+    persistState();
+  }, 'live-forward'));
+
   socket.on('clear', guard(() => {
-    liveState = { type: 'blank' };
+    setLive({ type: 'blank' });
     overlayMode = 'none';
     io.emit('live-state', liveState);
+    emitLiveNav();
     io.emit('overlay-state', overlayMode);
     persistState();
   }, 'clear'));
@@ -1695,6 +1831,7 @@ app.get('/api/backup', async (req, res) => {
       announcements: await loadAnnouncementsList(),
       freeTexts: await loadFreeTextsList(),
       schedule: await loadScheduleList(),
+      templates: await loadTemplates(),
     };
     res.set('Content-Disposition', `attachment; filename="presenter-backup-${new Date().toISOString().slice(0, 10)}.json"`);
     res.json(backup);
@@ -1729,6 +1866,18 @@ app.post('/api/restore', async (req, res) => {
       const text = sec.str(f && f.text, 6000).trim();
       if (text && !existingFt.has(text)) { await addFreeTextItem(text); added.freeTexts++; }
     }
+    const haveTpl = await loadTemplates();
+    const tplNames = new Set(haveTpl.map((t) => t.name.toLowerCase()));
+    let addedTpl = 0;
+    for (const t of (Array.isArray(b.templates) ? b.templates : []).slice(0, 50)) {
+      const name = sec.str(t && t.name, 80).trim();
+      const items = (Array.isArray(t && t.items) ? t.items : []).map(cleanScheduleItem).filter(Boolean).slice(0, 200);
+      if (!name || !items.length || tplNames.has(name.toLowerCase()) || haveTpl.length >= 50) continue;
+      haveTpl.push({ id: newMediaId('tpl'), name, items, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      tplNames.add(name.toLowerCase()); addedTpl++;
+    }
+    if (addedTpl) await saveTemplates(haveTpl);
+    added.templates = addedTpl;
     songCache = null;
     res.json({ ok: true, added });
   } catch (e) {

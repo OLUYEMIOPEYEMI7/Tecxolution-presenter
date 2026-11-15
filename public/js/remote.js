@@ -24,6 +24,7 @@ socket.on('live-state', (st) => {
   const next = st && Array.isArray(st.next) ? st.next : [];
   $('rm-next').textContent = next.length ? next.join('\n') : '—';
 });
+socket.on('live-nav', (n) => { const b = $('rm-back'); if (b) { b.disabled = !n.canBack; b.textContent = n.canBack ? '↩ Back to: ' + n.backTitle : '↩ Back to previous slide'; } });
 socket.on('overlay-state', (m) => {
   ['black', 'logo', 'clear'].forEach((k) => $('ov-' + k).classList.toggle('active', m === k));
 });
@@ -35,7 +36,8 @@ socket.on('history', (list) => {
 document.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
-  if (b.dataset.cmd) { socket.emit('remote-cmd', { cmd: b.dataset.cmd }); if (navigator.vibrate) navigator.vibrate(15); }
+  if (b.dataset.back) { socket.emit('live-back'); if (navigator.vibrate) navigator.vibrate(15); }
+  else if (b.dataset.cmd) { socket.emit('remote-cmd', { cmd: b.dataset.cmd }); if (navigator.vibrate) navigator.vibrate(15); }
   else if (b.dataset.ov) { socket.emit('overlay', b.dataset.ov); if (navigator.vibrate) navigator.vibrate(15); }
   else if (b.dataset.sched) { socket.emit('remote-cmd', { cmd: 'schedule', id: b.dataset.sched, live: b.dataset.live === '1' }); if (navigator.vibrate) navigator.vibrate(15); }
   else if (b.dataset.hist) { const h = (window._hist || [])[+b.dataset.hist]; if (h) { socket.emit('stage', h.state); } }

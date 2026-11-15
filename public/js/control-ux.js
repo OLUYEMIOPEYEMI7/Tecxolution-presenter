@@ -355,6 +355,8 @@
       if ($('shortcuts').classList.contains('open')) { closeShortcuts(); e.stopImmediatePropagation(); return; }
       if (menu.classList.contains('open')) { setMenu(false); e.stopImmediatePropagation(); return; }
     }
+    if ((e.ctrlKey || e.metaKey) && !typing && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? liveForward : liveBack)(); return; }
+    if ((e.ctrlKey || e.metaKey) && !typing && e.key.toLowerCase() === 'y') { e.preventDefault(); liveForward(); return; }
     if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === '/') { e.preventDefault(); openPalette(); }
     else if (e.key === '?') { e.preventDefault(); openShortcuts(); }

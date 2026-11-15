@@ -54,6 +54,8 @@
       <span class="livebar-elapsed" id="lb-elapsed"></span>
     </div>
     <div class="livebar-actions" role="group" aria-label="Output controls">
+      <button class="secondary" id="lb-back" onclick="liveBack()" title="Put the previous slide back on screen (Ctrl+Z)" disabled>↩ Back</button>
+      <button class="secondary" id="lb-fwd" onclick="liveForward()" title="Redo (Ctrl+Shift+Z)" disabled>↪</button>
       <button class="secondary" id="ov-black" onclick="toggleOverlay('black')" title="Black screen (B)">⬛ Black <kbd>B</kbd></button>
       <button class="secondary" id="ov-logo" onclick="toggleOverlay('logo')" title="Logo screen (L)">Logo <kbd>L</kbd></button>
       <button class="secondary" id="ov-clear" onclick="toggleOverlay('clear')" title="Hide text, keep background (C)">Clear text <kbd>C</kbd></button>
@@ -102,6 +104,15 @@
       <div class="scripture-box">
         <div id="schedule-list" style="margin-bottom:8px;"><p style="color:#666; font-size:12px; margin:0;">Empty — click "+ Schedule" on any slide/scripture to build your service order.</p></div>
         <button class="secondary" onclick="clearSchedule()" style="font-size:11px;">Clear Schedule</button>
+      </div>
+      <h2>📋 Service templates</h2>
+      <div class="scripture-box" id="tpl-box">
+        <p style="font-size:11px; color:#888; margin:0 0 8px;">Build the order of service once, save it as a template ("Sunday 1st service"), then load it with one click any week.</p>
+        <div class="tpl-save">
+          <input type="text" id="tpl-name" class="form-input" maxlength="80" placeholder="Template name, e.g. Sunday 1st service" style="font-size:12px; padding:7px 10px;" />
+          <button onclick="saveTemplate()" title="Save the current schedule as a template (same name = update it)">Save current schedule</button>
+        </div>
+        <div id="tpl-list" class="tpl-list"><p style="color:#666; font-size:11px; margin:8px 0 0;">No templates yet.</p></div>
       </div>
       </section>
       <section class="tab-pane" id="tab-scripture" role="tabpanel" aria-labelledby="tabbtn-scripture">

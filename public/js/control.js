@@ -1236,6 +1236,78 @@ function removeScheduleItem(id) {
   fetch('/api/schedule/' + id, { method: 'DELETE' });
 }
 
+// ================= Service templates =================
+let templates = [];
+function loadTemplatesList() {
+  return fetch('/api/templates').then((r) => r.json()).then((d) => { templates = d.items || []; renderTemplates(); }).catch(() => {});
+}
+function renderTemplates() {
+  const el = document.getElementById('tpl-list');
+  if (!templates.length) { el.innerHTML = '<p style="color:#666; font-size:11px; margin:8px 0 0;">No templates yet.</p>'; return; }
+  el.innerHTML = templates.map((t) => `
+    <div class="tpl-item" data-id="${t.id}">
+      <div class="tpl-head"><strong>${escapeHtmlLocal(t.name)}</strong> <span class="muted">${t.count} item${t.count === 1 ? '' : 's'}</span></div>
+      <div class="tpl-titles">${escapeHtmlLocal((t.titles || []).slice(0, 6).join(' · '))}${t.count > 6 ? ' …' : ''}</div>
+      <div class="tpl-actions">
+        <button data-tpl="load">Load (replace schedule)</button>
+        <button class="secondary" data-tpl="append">Add to schedule</button>
+        <button class="secondary" data-tpl="update" title="Overwrite this template with the current schedule">Update</button>
+        <button class="secondary" data-tpl="rename">Rename</button>
+        <button class="secondary danger" data-tpl="delete">Delete</button>
+      </div>
+    </div>`).join('');
+}
+function tplApi(url, opts) {
+  return fetch(url, opts).then((r) => r.json().then((d) => { if (!r.ok) throw new Error(d.error || 'Failed'); return d; }));
+}
+function saveTemplate() {
+  const input = document.getElementById('tpl-name');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return alert('Type a name for the template first.'); }
+  const exists = templates.some((t) => t.name.toLowerCase() === name.toLowerCase());
+  if (exists && !confirm('A template called "' + name + '" already exists. Replace it with the current schedule?')) return;
+  tplApi('/api/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+    .then((d) => { templates = d.items; renderTemplates(); input.value = ''; if (window.toast) toast(d.replaced ? 'Template updated' : 'Template saved'); })
+    .catch((e) => alert(e.message));
+}
+document.getElementById('tpl-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-tpl]');
+  if (!btn) return;
+  const id = btn.closest('.tpl-item').dataset.id;
+  const t = templates.find((x) => x.id === id);
+  const act = btn.dataset.tpl;
+  if (act === 'load' || act === 'append') {
+    if (act === 'load' && schedule.length && !confirm('Replace today\'s schedule with "' + t.name + '"?')) return;
+    tplApi('/api/templates/' + id + '/load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: act === 'append' ? 'append' : 'replace' }) })
+      .then((d) => { schedule = d.items || []; renderSchedule(); if (window.toast) toast('Loaded "' + t.name + '"'); })
+      .catch((err) => alert(err.message));
+  } else if (act === 'update') {
+    if (!confirm('Overwrite "' + t.name + '" with the current schedule?')) return;
+    tplApi('/api/templates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: t.name }) })
+      .then((d) => { templates = d.items; renderTemplates(); if (window.toast) toast('Template updated'); }).catch((err) => alert(err.message));
+  } else if (act === 'rename') {
+    const name = prompt('New name', t.name);
+    if (!name || !name.trim()) return;
+    tplApi('/api/templates/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) })
+      .then((d) => { templates = d.items; renderTemplates(); }).catch((err) => alert(err.message));
+  } else if (act === 'delete') {
+    if (!confirm('Delete the template "' + t.name + '"?')) return;
+    tplApi('/api/templates/' + id, { method: 'DELETE' }).then((d) => { templates = d.items; renderTemplates(); }).catch((err) => alert(err.message));
+  }
+});
+loadTemplatesList();
+
+// ================= Back / forward through what was on screen =================
+function liveBack() { socket.emit('live-back'); }
+function liveForward() { socket.emit('live-forward'); }
+socket.on('live-nav', (n) => {
+  const b = document.getElementById('lb-back'), f = document.getElementById('lb-fwd');
+  if (!b || !f) return;
+  b.disabled = !n.canBack; f.disabled = !n.canForward;
+  b.title = n.canBack ? 'Put back: ' + n.backTitle + ' (Ctrl+Z)' : 'Nothing to go back to';
+  f.title = n.canForward ? 'Redo: ' + n.forwardTitle + ' (Ctrl+Shift+Z)' : 'Nothing to redo';
+});
+
 function clearSchedule() {
   if (!confirm('Clear the whole schedule?')) return;
   schedule = [];

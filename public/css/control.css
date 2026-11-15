@@ -279,3 +279,14 @@ button.tiny { padding: 2px 8px; font-size: 10px; }
 .style-row label.inline { justify-content: flex-start; }
 .style-row label.inline input { width: auto; margin: 0; }
 .style-row .swatches + button.tiny { margin-left: 4px; }
+
+/* Service templates */
+.tpl-save { display: flex; gap: 8px; }
+.tpl-save input { flex: 1; }
+.tpl-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.tpl-item { border: 1px solid #2a2a40; border-radius: 8px; padding: 10px; background: #0b0b1a; }
+.tpl-head { font-size: 13px; }
+.tpl-titles { font-size: 11px; color: #8a8aa0; margin: 4px 0 8px; line-height: 1.4; }
+.tpl-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.tpl-actions button { font-size: 11px; padding: 5px 9px; }
+.livebar-actions button:disabled { opacity: .35; cursor: default; }
