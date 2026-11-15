@@ -70,6 +70,7 @@ const stageBg = document.getElementById('stage-bg');
 const stageContent = document.getElementById('stage-content');
 const stageLabel = document.getElementById('stage-label');
 const stageImage = document.getElementById('stage-image');
+const stageImageBlur = document.getElementById('stage-image-blur');
 const stageVideo = document.getElementById('stage-video');
 const stageVideoEmbed = document.getElementById('stage-video-embed');
 const tickerBar = document.getElementById('ticker-bar');
@@ -156,6 +157,8 @@ function render(state) {
   } else if (state.type === 'image') {
     stageImage.src = state.url || '';
     stageImage.style.display = 'block';
+    stageImageBlur.style.backgroundImage = state.url ? `url('${state.url}')` : '';
+    applyImageLayout();
     stageContent.innerHTML = '';
     stageLabel.textContent = '';
   } else if (state.type === 'video') {
@@ -204,7 +207,22 @@ function fitContent() {
   }
 }
 
-window.addEventListener('resize', fitContent);
+window.addEventListener('resize', () => { fitContent(); applyImageLayout(); });
+
+// Image fit / rotate / zoom (settings from the control room). Rotating by
+// 90/270 swaps the box so the picture still fits the screen.
+let imgSettings = { rotate: 0, zoom: 100 };
+function applyImageLayout() {
+  const r = imgSettings.rotate, z = (imgSettings.zoom || 100) / 100;
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  if (r % 180) {
+    Object.assign(stageImage.style, { inset: 'auto', left: '50%', top: '50%', width: sh + 'px', height: sw + 'px',
+      transform: `translate(-50%,-50%) rotate(${r}deg) scale(${z})` });
+  } else {
+    Object.assign(stageImage.style, { inset: '0', left: '', top: '', width: '100%', height: '100%',
+      transform: (r || z !== 1) ? `rotate(${r}deg) scale(${z})` : '' });
+  }
+}
 
 // Scrolling lower-third ticker (EasyWorship-style) — independent of the main
 // slide, so an account number or notice can scroll continuously underneath
@@ -263,6 +281,10 @@ socket.on('settings-state', (s) => {
   root.dataset.caps = s.caps ? '1' : '0';
   root.dataset.shadow = String(s.shadow == null ? 1 : s.shadow);
   root.dataset.pos = s.position || 'middle';
+  root.dataset.imgFit = s.imageFit || 'contain';
+  root.dataset.imgBg = s.imageBg || 'black';
+  imgSettings = { rotate: s.imageRotate || 0, zoom: s.imageZoom || 100 };
+  applyImageLayout();
   fitContent();
 });
 

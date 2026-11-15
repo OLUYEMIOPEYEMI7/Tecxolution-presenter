@@ -335,6 +335,15 @@ html, body { margin: 0; padding: 0; font-family: var(--font-ui); }
   background: #000;
   z-index: 1;
 }
+.stage-image-blur { position: absolute; inset: -6%; z-index: 0; background-size: cover; background-position: center; filter: blur(38px) brightness(.55); display: none; }
+html[data-img-bg="blur"] .stage.image .stage-image-blur { display: block; }
+html[data-img-bg="blur"] .stage-media-img { background: transparent; }
+html[data-img-bg="white"] .stage-media-img, html[data-img-bg="white"] .stage-media-video { background: #fff; }
+html[data-img-bg="gray"] .stage-media-img, html[data-img-bg="gray"] .stage-media-video { background: #2b2b2b; }
+html[data-img-fit="cover"] .stage-media-img, html[data-img-fit="cover"] .stage-media-video { object-fit: cover; }
+html[data-img-fit="fill"] .stage-media-img, html[data-img-fit="fill"] .stage-media-video { object-fit: fill; }
+html[data-img-fit="none"] .stage-media-img { object-fit: none; }
+.stage.image { background: #000; }
 .stage.image .stage-content,
 .stage.image .stage-label,
 .stage.image .stage-bg,

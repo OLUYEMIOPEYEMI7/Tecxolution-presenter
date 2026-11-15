@@ -183,7 +183,7 @@
   enhanceSchedule();
 
   // -------------------------------------------------- typography settings
-  let settings = { fontScale: 1, fontFamily: 'sans', align: 'center', caps: false, shadow: 1, position: 'middle', lineSpacing: 1.32 };
+  let settings = { fontScale: 1, fontFamily: 'sans', align: 'center', caps: false, shadow: 1, position: 'middle', lineSpacing: 1.32, imageFit: 'contain', imageBg: 'black', imageRotate: 0, imageZoom: 100 };
   function sendSettings(patch) { settings = { ...settings, ...patch }; socket.emit('settings-update', patch); }
   socket.on('settings-state', (st) => {
     settings = { ...settings, ...st };
@@ -192,6 +192,9 @@
     $('set-position').value = settings.position;
     $('set-shadow').value = String(settings.shadow);
     $('set-caps').checked = !!settings.caps;
+    $('img-fit').value = settings.imageFit; $('img-bg').value = settings.imageBg;
+    $('img-rot').value = String(settings.imageRotate); $('img-zoom').value = settings.imageZoom;
+    $('img-zoom-val').textContent = settings.imageZoom + '%';
     $('line-spacing').value = Math.round(settings.lineSpacing * 100);
     $('line-spacing-val').textContent = Number(settings.lineSpacing).toFixed(2).replace(/0$/, '');
   });
@@ -200,6 +203,16 @@
   $('set-position').addEventListener('change', (e) => sendSettings({ position: e.target.value }));
   $('set-shadow').addEventListener('change', (e) => sendSettings({ shadow: Number(e.target.value) }));
   $('set-caps').addEventListener('change', (e) => sendSettings({ caps: e.target.checked }));
+  $('img-fit').addEventListener('change', (e) => sendSettings({ imageFit: e.target.value }));
+  $('img-bg').addEventListener('change', (e) => sendSettings({ imageBg: e.target.value }));
+  $('img-rot').addEventListener('change', (e) => sendSettings({ imageRotate: Number(e.target.value) }));
+  let izDebounce = null;
+  $('img-zoom').addEventListener('input', (e) => {
+    $('img-zoom-val').textContent = e.target.value + '%';
+    clearTimeout(izDebounce);
+    izDebounce = setTimeout(() => sendSettings({ imageZoom: Number(e.target.value) }), 80);
+  });
+  $('img-reset').addEventListener('click', () => sendSettings({ imageFit: 'contain', imageBg: 'black', imageRotate: 0, imageZoom: 100 }));
   let lsDebounce = null;
   $('line-spacing').addEventListener('input', (e) => {
     $('line-spacing-val').textContent = (e.target.value / 100).toFixed(2).replace(/0$/, '');

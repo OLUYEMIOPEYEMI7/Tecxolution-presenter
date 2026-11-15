@@ -156,6 +156,23 @@
           and projected just like a song's slides.
         </p>
 
+        <div class="style-row" id="img-display" style="margin:0 0 12px;">
+          <label>Image fit
+            <select id="img-fit">
+              <option value="contain">Fit to screen (show whole picture)</option>
+              <option value="cover">Fill screen (crop edges)</option>
+              <option value="fill">Stretch to screen</option>
+              <option value="none">Original size (no scaling)</option>
+            </select></label>
+          <label>Behind the picture
+            <select id="img-bg"><option value="black">Black</option><option value="blur">Blurred copy</option><option value="gray">Dark grey</option><option value="white">White</option></select></label>
+          <label>Rotate
+            <select id="img-rot"><option value="0">0°</option><option value="90">90° right</option><option value="180">180°</option><option value="270">90° left</option></select></label>
+          <label>Zoom <span id="img-zoom-val" class="muted">100%</span>
+            <input type="range" id="img-zoom" min="50" max="250" step="5" value="100" /></label>
+          <label class="inline"><button type="button" class="secondary tiny" id="img-reset">Reset image view</button></label>
+        </div>
+
         <div class="media-tabs" id="media-tabs">
           <button class="song-tab active" data-media-tab="image">Image</button>
           <button class="song-tab" data-media-tab="video">Video</button>

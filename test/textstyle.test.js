@@ -15,3 +15,10 @@ test('ticker look is validated', () => {
   assert.deepStrictEqual(t, { active: true, text: 'Account 123', size: 60, color: '', bg: '#0b2a4a', align: 'left', scroll: false, speed: 'normal' });
   assert.deepStrictEqual(sec.cleanTicker(undefined), { active: false, text: '', size: 100, color: '', bg: '', align: 'center', scroll: true, speed: 'normal' });
 });
+
+test('image display settings are validated', () => {
+  const s = sec.cleanSettings({ imageFit: 'cover', imageBg: 'blur', imageRotate: 90, imageZoom: 999 });
+  assert.deepStrictEqual([s.imageFit, s.imageBg, s.imageRotate, s.imageZoom], ['cover', 'blur', 90, 250]);
+  const d = sec.cleanSettings({ imageFit: 'url(x)', imageBg: 'red', imageRotate: 45, imageZoom: 'abc' });
+  assert.deepStrictEqual([d.imageFit, d.imageBg, d.imageRotate, d.imageZoom], ['contain', 'black', 0, 100]);
+});
