@@ -26,6 +26,8 @@
       <span class="pt-icon" aria-hidden="true">⌕</span><span class="pt-text">Search songs, scripture, actions…</span><kbd>Ctrl K</kbd>
     </button>
     <div class="header-right">
+      <span class="out-chip" id="out-chip" hidden title="Is the church screen connected?"></span>
+      <button class="secondary" id="lock-btn" type="button" title="Service mode: lock settings and editing so nothing is changed by accident while you are live">🔓 Lock</button>
       <button class="net-chip" id="net-chip" type="button" hidden></button>
       <div class="live-indicator" title="Connection to the server"><span class="live-dot" id="live-dot"></span><span id="live-text">connecting…</span></div>
       <div class="menu-wrap">
@@ -33,8 +35,11 @@
         <div class="menu" id="menu" role="menu">
           <a role="menuitem" href="/stage" target="_blank" rel="noopener">Stage monitor ⧉</a>
           <a role="menuitem" href="/remote" target="_blank" rel="noopener">Phone remote ⧉</a>
+          <a role="menuitem" href="/lower?bar=1" target="_blank" rel="noopener" title="Caption bar for streaming software (OBS / vMix): add as a Browser Source">Livestream lower-third ⧉</a>
+          <a role="menuitem" id="menu-simple">Simple mode: <span id="simple-state">off</span></a>
+          <a role="menuitem" id="menu-guide">Quick start guide</a>
           <a role="menuitem" onclick="openImportModal()">Import lyrics…</a>
-          <a role="menuitem" href="/api/backup">Download backup ⬇</a>
+          <a role="menuitem" href="/api/backup" id="menu-backup">Download backup ⬇ <span id="backup-age" class="muted"></span></a>
           <a role="menuitem" onclick="document.getElementById('restore-file').click()">Restore from backup ⬆</a>
           <a role="menuitem" id="menu-shortcuts">Keyboard shortcuts <kbd>?</kbd></a>
           <hr />
@@ -365,7 +370,11 @@
         <div id="voice-transcript" style="font-size:11px; color:#666; max-height:80px; overflow-y:auto; background:#0b0b1a; border-radius:6px; padding:6px; margin-bottom:6px;"></div>
         <div id="voice-log" style="font-size:11px; color:#8a8aa0;"></div>
       </div>
-    
+      <h2>🕒 Activity log</h2>
+      <div class="scripture-box">
+        <p style="font-size:11px; color:#888; margin:0 0 8px;">Who put what on screen, and when — handy if something unexpected appeared.</p>
+        <div id="activity-list" class="activity-list"><p style="color:#666; font-size:11px; margin:0;">Nothing yet.</p></div>
+      </div>
       </section>
     </div>
 
@@ -444,7 +453,7 @@
       <div class="preview-section">
         <h2 style="margin:2px 16px 0;">Live <span style="font-size:10px; color:#666; font-weight:400;">(audience sees this)</span></h2>
         <div class="preview-frame">
-          <iframe src="/display"></iframe>
+          <iframe src="/display?embed=1"></iframe>
         </div>
       </div>
     </div>
@@ -618,6 +627,7 @@ Chorus
   <script src="/js/common.js"></script>
   <script src="/js/control.js"></script>
   <script src="/js/control-ux.js"></script>
+  <script src="/js/control-ops.js"></script>
   <script src="/js/scripture-nav.js"></script>
   <script src="/js/desktop-ui.js"></script>
 </body>

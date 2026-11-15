@@ -707,6 +707,22 @@ let timerState = { active: false, mode: 'down', target: 0, label: '', onDisplay:
 let settingsState = sec.cleanSettings({});
 let alertState = { text: '', until: 0 };
 let history = []; // recently shown items, newest first
+// Activity log: who did what, newest last (kept in memory + saved with the live state).
+let activity = [];
+const ACT_MAX = 150;
+function logAct(who, text) {
+  const entry = { at: Date.now(), who: who === 'operator' ? 'Operator' : who === 'remote' ? 'Volunteer' : 'System', text: String(text).slice(0, 160) };
+  activity.push(entry);
+  if (activity.length > ACT_MAX) activity.shift();
+  try { io.to('controllers').emit('activity-entry', entry); } catch (e) {}
+  persistState();
+}
+const whoOf = (req) => sec.roleFromCookieHeader(req.headers.cookie);
+// Connected output screens (projector / stage monitor), so the operator can see
+// at a glance whether the church screen is actually connected.
+const outputs = { display: new Set(), stage: new Set() };
+function outputCounts() { return { projectors: outputs.display.size, stages: outputs.stage.size }; }
+function emitOutputs() { io.to('controllers').to('remotes').emit('outputs', outputCounts()); }
 // Back / forward through what has been on the projector (undo a wrong slide or an accidental Clear).
 let backStack = [];
 let fwdStack = [];
@@ -753,7 +769,7 @@ function persistState() {
 }
 async function flushState() {
   clearTimeout(persistTimer);
-  const snapshot = { liveState, previewState, tickerState, overlayMode, timerState, settingsState, history };
+  const snapshot = { liveState, previewState, tickerState, overlayMode, timerState, settingsState, history, activity: activity.slice(-100) };
   try {
     if (pool) {
       await pool.query(
@@ -784,6 +800,7 @@ async function restoreState() {
     if (['none', 'black', 'logo', 'clear'].includes(snap.overlayMode)) overlayMode = snap.overlayMode;
     if (snap.timerState) timerState = cleanTimer(snap.timerState);
     if (snap.settingsState) settingsState = cleanSettings(snap.settingsState);
+    if (Array.isArray(snap.activity)) activity = snap.activity.filter((a) => a && a.text).slice(-100).map((a) => ({ at: Number(a.at) || 0, who: String(a.who || 'System').slice(0, 20), text: String(a.text).slice(0, 160) }));
     if (Array.isArray(snap.history)) history = snap.history.filter((h) => h && h.state && sec.sanitizeState(h.state)).slice(0, 15);
     console.log('Restored last live screen state.');
   } catch (e) {
@@ -863,6 +880,7 @@ app.use(
 // operator session: /control, /remote, every write API and every write socket event.
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, 'views', 'display.html')));
 app.get('/stage', (req, res) => res.sendFile(path.join(__dirname, 'views', 'stage.html')));
+app.get('/lower', (req, res) => res.sendFile(path.join(__dirname, 'views', 'lower.html')));
 app.get('/control', sec.requireOperator, (req, res) => res.sendFile(path.join(__dirname, 'views', 'control.html')));
 app.get('/remote', sec.requireAnyRole, (req, res) => res.sendFile(path.join(__dirname, 'views', 'remote.html')));
 app.get('/', (req, res) => res.redirect('/control'));
@@ -876,6 +894,8 @@ app.use('/api', (req, res, next) => {
   if (req.method === 'GET' && p === '/api/schedule') return sec.requireAnyRole(req, res, next);
   return sec.requireOperator(req, res, next);
 });
+
+app.get('/api/activity', (req, res) => res.json({ items: activity.slice(-100) }));
 
 app.get('/api/songs', async (req, res) => {
   try {
@@ -1514,6 +1534,7 @@ app.post('/api/schedule', async (req, res) => {
   if (!item_) return res.status(400).json({ error: 'displayTitle and a valid item are required' });
   try {
     const item = await addScheduleRow(item_);
+    logAct(whoOf(req), 'Added to schedule: ' + item_.displayTitle);
     res.json(item);
   } catch (e) {
     res.status(500).json({ error: 'Could not add to schedule: ' + e.message });
@@ -1570,6 +1591,7 @@ app.post('/api/templates', async (req, res) => {
       all.push({ id: newMediaId('tpl'), name, items, createdAt: now, updatedAt: now });
     }
     await saveTemplates(all);
+    logAct(whoOf(req), (existing ? 'Updated' : 'Saved') + ' template: ' + name);
     res.json({ ok: true, replaced: !!existing, items: all.map(templateMeta) });
   } catch (e) { res.status(500).json({ error: 'Could not save template: ' + e.message }); }
 });
@@ -1581,6 +1603,7 @@ app.post('/api/templates/:id/load', async (req, res) => {
     if (!t) return res.status(404).json({ error: 'Template not found' });
     if ((req.body && req.body.mode) !== 'append') await clearScheduleRows();
     for (const it of t.items) { const c = cleanScheduleItem(it); if (c) await addScheduleRow(c); }
+    logAct(whoOf(req), 'Loaded template: ' + t.name);
     res.json({ ok: true, items: await loadScheduleList() });
   } catch (e) { res.status(500).json({ error: 'Could not load template: ' + e.message }); }
 });
@@ -1632,6 +1655,7 @@ app.delete('/api/schedule/:id', async (req, res) => {
 app.delete('/api/schedule', async (req, res) => {
   try {
     await clearScheduleRows();
+    logAct(whoOf(req), 'Cleared the schedule');
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not clear schedule: ' + e.message });
@@ -1681,8 +1705,16 @@ io.on('connection', (socket) => {
   if (socket.data.role) socket.emit('history', history.map(({ title, at, state }) => ({ title, at, state })));
 
   socket.on('hello', (role) => {
-    if (socket.data.operator && role === 'control') socket.join('controllers');
-    if (socket.data.role && role === 'remote') socket.join('remotes');
+    if (socket.data.operator && role === 'control') { socket.join('controllers'); socket.emit('outputs', outputCounts()); }
+    if (socket.data.role && role === 'remote') { socket.join('remotes'); socket.emit('outputs', outputCounts()); }
+    if (role === 'display' || role === 'stage') {
+      socket.data.output = role;
+      outputs[role].add(socket.id);
+      emitOutputs();
+    }
+  });
+  socket.on('disconnect', () => {
+    if (socket.data.output && outputs[socket.data.output].delete(socket.id)) emitOutputs();
   });
   socket.on('time-sync', (ack) => { if (typeof ack === 'function') ack(Date.now()); });
 
@@ -1707,6 +1739,7 @@ io.on('connection', (socket) => {
   // Promote whatever is currently staged in Preview to Live
   socket.on('golive', guard(() => {
     setLive(previewState);
+    logAct(socket.data.role, 'Went live: ' + titleOf(liveState));
     pushHistory(liveState);
     io.emit('live-state', liveState);
     emitLiveNav();
@@ -1719,6 +1752,7 @@ io.on('connection', (socket) => {
     const st = sec.sanitizeState(payload);
     if (!st) return;
     setLive(st);
+    logAct(socket.data.role, 'Projected: ' + titleOf(liveState));
     pushHistory(liveState);
     io.emit('live-state', liveState);
     emitLiveNav();
@@ -1739,6 +1773,7 @@ io.on('connection', (socket) => {
     if (!backStack.length) return;
     fwdStack.push(liveState);
     liveState = backStack.pop();
+    logAct(socket.data.role, 'Went back to: ' + (titleOf(liveState) || 'blank screen'));
     io.emit('live-state', liveState);
     emitLiveNav();
     persistState();
@@ -1755,6 +1790,7 @@ io.on('connection', (socket) => {
 
   socket.on('clear', guard(() => {
     setLive({ type: 'blank' });
+    logAct(socket.data.role, 'Cleared the screen');
     overlayMode = 'none';
     io.emit('live-state', liveState);
     emitLiveNav();
@@ -1767,13 +1803,16 @@ io.on('connection', (socket) => {
   socket.on('overlay', guard((mode) => {
     if (!['none', 'black', 'logo', 'clear'].includes(mode)) return;
     overlayMode = mode;
+    logAct(socket.data.role, mode === 'none' ? 'Showing output again' : 'Screen overlay: ' + mode);
     io.emit('overlay-state', overlayMode);
     persistState();
   }, 'overlay'));
 
   // Scrolling ticker (lower-third banner) — independent of the main slide.
   socket.on('ticker-update', guard((payload) => {
+    const wasActive = tickerState.active;
     tickerState = sec.cleanTicker(payload);
+    if (tickerState.active !== wasActive) logAct(socket.data.role, tickerState.active ? 'Ticker started' : 'Ticker stopped');
     io.emit('ticker-state', tickerState);
     persistState();
   }, 'ticker-update'));
@@ -1804,6 +1843,7 @@ io.on('connection', (socket) => {
 
   socket.on('settings-update', guard((payload) => {
     settingsState = cleanSettings({ ...settingsState, ...payload });
+    logAct(socket.data.role, 'Display settings changed');
     io.emit('settings-state', settingsState);
     persistState();
   }, 'settings-update'));

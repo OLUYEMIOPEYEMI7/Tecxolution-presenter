@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Livestream Lower-third</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/lower.css" />
+</head>
+<body>
+  <!-- Transparent page for OBS / vMix / Restream: add as a Browser Source (1920x1080).
+       ?pos=top|bottom  ?bar=0 (no dark bar)  ?size=1.2 (text scale)  ?lines=4 -->
+  <div id="lt" class="lt"><div class="lt-ref" id="lt-ref"></div><div class="lt-text" id="lt-text"></div></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/lower.js"></script>
+</body>
+</html>

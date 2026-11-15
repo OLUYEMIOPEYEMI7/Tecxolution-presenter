@@ -290,3 +290,26 @@ button.tiny { padding: 2px 8px; font-size: 10px; }
 .tpl-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .tpl-actions button { font-size: 11px; padding: 5px 9px; }
 .livebar-actions button:disabled { opacity: .35; cursor: default; }
+
+/* Operations: projector chip, service mode, simple mode, activity, guide */
+.out-chip { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+.out-chip.ok { background: #12301f; color: #6ee7a0; border: 1px solid #2f9e62; }
+.out-chip.warn { background: #3b1218; color: #ff8f9b; border: 1px solid #a3303c; animation: outPulse 1.6s infinite; }
+@keyframes outPulse { 50% { opacity: .55; } }
+#lock-banner { background: #3b2d0d; color: #f2c14e; font-size: 12px; font-weight: 600; text-align: center; padding: 6px 12px; border-bottom: 1px solid #6b5420; }
+body.service-locked [inert] { opacity: .35; filter: grayscale(.6); }
+body.service-locked #tabbtn-media { opacity: .45; }
+body.simple-mode #tabbtn-media, body.simple-mode #tabbtn-tools { display: none; }
+.activity-list { max-height: 260px; overflow-y: auto; font-size: 12px; }
+.act-row { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1d1d30; }
+.act-time { color: #777; font-variant-numeric: tabular-nums; flex: none; }
+.act-who { color: var(--gold); flex: none; min-width: 68px; }
+.act-text { color: #cfcfe0; }
+.tour-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 100000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.tour-card { background: #14142a; border: 1px solid #34345a; border-radius: 14px; padding: 22px 24px; max-width: 460px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.tour-count { font-size: 11px; color: #8a8aa0; margin-bottom: 6px; }
+.tour-title { margin: 0 0 8px; font-size: 20px; color: var(--gold); }
+.tour-text { margin: 0 0 18px; font-size: 14px; line-height: 1.55; color: #dcdcec; }
+.tour-actions { display: flex; gap: 8px; align-items: center; }
+.header-right .out-chip, .header-right #lock-btn { white-space: nowrap; }
+.header-right #lock-btn { padding: 8px 12px; }

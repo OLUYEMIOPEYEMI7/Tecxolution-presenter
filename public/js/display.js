@@ -1,6 +1,6 @@
 const socket = io();
 if (window.watchBuild) window.watchBuild(socket);
-socket.on('connect', () => { socket.emit('hello', 'display'); window.syncServerTime(socket); });
+socket.on('connect', () => { { const qs = new URLSearchParams(location.search); socket.emit('hello', (qs.get('mode') === 'preview' || qs.get('embed') === '1') ? 'preview' : 'display'); } window.syncServerTime(socket); });
 
 // Auto-fullscreen when launched from the Control Room's "Open Projection
 // Screen" button. This can silently fail (the click's user-activation can
