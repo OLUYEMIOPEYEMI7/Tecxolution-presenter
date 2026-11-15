@@ -701,7 +701,7 @@ async function getAllSongsFull() {
 // ---------------------------------------------------------------------------
 let liveState = { type: 'blank' };
 let previewState = { type: 'blank' };
-let tickerState = { active: false, text: '' };
+let tickerState = sec.cleanTicker({});
 let overlayMode = 'none'; // none | black | logo | clear  (hides output without losing the live slide)
 let timerState = { active: false, mode: 'down', target: 0, label: '', onDisplay: false };
 let settingsState = sec.cleanSettings({});
@@ -760,7 +760,7 @@ async function restoreState() {
     if (!snap) return;
     liveState = sec.sanitizeState(snap.liveState) || liveState;
     previewState = sec.sanitizeState(snap.previewState) || previewState;
-    if (snap.tickerState) tickerState = { active: !!snap.tickerState.active, text: sec.str(snap.tickerState.text, 600) };
+    if (snap.tickerState) tickerState = sec.cleanTicker(snap.tickerState);
     if (['none', 'black', 'logo', 'clear'].includes(snap.overlayMode)) overlayMode = snap.overlayMode;
     if (snap.timerState) timerState = cleanTimer(snap.timerState);
     if (snap.settingsState) settingsState = cleanSettings(snap.settingsState);
@@ -1485,7 +1485,7 @@ app.post('/api/schedule', async (req, res) => {
   if (stateType === 'scripture-ref') item_.ref = sec.str(req.body.ref, 80);
   if (stateType === 'media-image' || stateType === 'media-video') item_.url = sec.safeUrl(req.body.url);
   if (stateType === 'media-deck') item_.deckId = sec.str(req.body.deckId, 100);
-  if (stateType === 'free-text') item_.text = sec.str(req.body.text, 6000);
+  if (stateType === 'free-text') { item_.text = sec.str(req.body.text, 6000); item_.style = sec.cleanTextStyle(req.body.style); }
   try {
     const item = await addScheduleRow(item_);
     res.json(item);
@@ -1612,7 +1612,7 @@ io.on('connection', (socket) => {
 
   // Scrolling ticker (lower-third banner) — independent of the main slide.
   socket.on('ticker-update', guard((payload) => {
-    tickerState = { active: !!(payload && payload.active), text: sec.str(payload && payload.text, 600) };
+    tickerState = sec.cleanTicker(payload);
     io.emit('ticker-state', tickerState);
     persistState();
   }, 'ticker-update'));

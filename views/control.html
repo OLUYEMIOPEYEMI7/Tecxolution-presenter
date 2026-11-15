@@ -202,6 +202,19 @@
           Type anything and project it — a welcome message, a quick notice, "Please silence your phones" — no need to build a whole song or presentation first. Uses whatever theme is currently selected.
         </p>
         <textarea id="free-text-input" rows="4" placeholder="Type whatever you want to display…" style="width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+        <div class="style-row" id="ft-style">
+          <label>Size <span id="ft-size-val" class="muted">100%</span>
+            <input type="range" id="ft-size" min="40" max="300" step="10" value="100" /></label>
+          <label>Colour
+            <input type="color" id="ft-color" value="#ffffff" />
+            <span class="swatches" data-target="ft-color">
+              <i style="background:#ffffff" data-c="#ffffff"></i><i style="background:#ffd966" data-c="#ffd966"></i><i style="background:#ffeb3b" data-c="#ffeb3b"></i><i style="background:#7fdbff" data-c="#7fdbff"></i><i style="background:#6ee7a0" data-c="#6ee7a0"></i><i style="background:#ff6b6b" data-c="#ff6b6b"></i>
+            </span>
+            <button type="button" class="secondary tiny" id="ft-color-reset" title="Use the theme's own text colour">Theme</button></label>
+          <label>Align
+            <select id="ft-align"><option value="">Default</option><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+          <label class="inline"><input type="checkbox" id="ft-bold" checked /> Bold</label>
+        </div>
         <div style="display:flex; gap:8px; margin-top:6px;">
           <button onclick="stageFreeText()" ondblclick="stageFreeText(true)" title="Click to stage · double-click to go live instantly">Stage in Preview</button>
           <button class="secondary" onclick="addFreeTextToSchedule()">+ Schedule</button>
@@ -214,6 +227,25 @@
           Type a notice, account number, or any message — it scrolls continuously along the bottom of the screen, under whatever is being projected.
         </p>
         <textarea id="ticker-input" rows="2" placeholder="e.g. Account: 1234567890 - GTBank (Building Fund) • Thanksgiving Service next Sunday 9AM" style="width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:#0b0b1a; color:#fff; font-size:12px; font-family:inherit; resize:vertical;"></textarea>
+        <div class="style-row" id="tk-style">
+          <label>Size <span id="tk-size-val" class="muted">100%</span>
+            <input type="range" id="tk-size" min="60" max="250" step="10" value="100" /></label>
+          <label>Text colour
+            <input type="color" id="tk-color" value="#ffd966" />
+            <span class="swatches" data-target="tk-color">
+              <i style="background:#ffffff" data-c="#ffffff"></i><i style="background:#ffd966" data-c="#ffd966"></i><i style="background:#ffeb3b" data-c="#ffeb3b"></i><i style="background:#7fdbff" data-c="#7fdbff"></i><i style="background:#6ee7a0" data-c="#6ee7a0"></i><i style="background:#ff6b6b" data-c="#ff6b6b"></i>
+            </span></label>
+          <label>Bar colour
+            <input type="color" id="tk-bg" value="#05050a" />
+            <span class="swatches" data-target="tk-bg">
+              <i style="background:#05050a" data-c="#05050a"></i><i style="background:#0b2a4a" data-c="#0b2a4a"></i><i style="background:#3b0d12" data-c="#3b0d12"></i><i style="background:#0f3d24" data-c="#0f3d24"></i><i style="background:#ffffff" data-c="#ffffff"></i>
+            </span></label>
+          <label>Speed
+            <select id="tk-speed"><option value="slow">Slow</option><option value="normal" selected>Normal</option><option value="fast">Fast</option></select></label>
+          <label class="inline"><input type="checkbox" id="tk-scroll" checked /> Scroll</label>
+          <label>Align <span class="muted" style="font-size:10px;">(when not scrolling)</span>
+            <select id="tk-align"><option value="left">Left</option><option value="center" selected>Centre</option><option value="right">Right</option></select></label>
+        </div>
         <div style="display:flex; gap:8px; margin:8px 0;">
           <button id="ticker-toggle-btn" onclick="toggleTicker()">▶ Start Scrolling</button>
           <button class="secondary" onclick="saveAnnouncement()">+ Save</button>

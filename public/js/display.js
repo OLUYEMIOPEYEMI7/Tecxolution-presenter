@@ -145,7 +145,13 @@ function render(state) {
     // just the words themselves, large and centered, same auto-fit-to-screen
     // behavior as every other slide type.
     const lines = (state.text || '').split('\n').map((l) => escapeHtml(l)).join('<br>');
-    stageContent.innerHTML = `<div class="free-text-body">${lines}</div>`;
+    const st = state.style || {};
+    const css = [];
+    if (st.size && st.size !== 100) css.push(`--ft-scale:${Number(st.size) / 100}`);
+    if (/^#[0-9a-f]{6}$/i.test(st.color || '')) css.push(`color:${st.color}`);
+    if (['left', 'center', 'right'].includes(st.align)) css.push(`text-align:${st.align}`);
+    if (st.bold === false) css.push('font-weight:400');
+    stageContent.innerHTML = `<div class="free-text-body" style="${css.join(';')}">${lines}</div>`;
     stageLabel.textContent = state.label || '';
   } else if (state.type === 'image') {
     stageImage.src = state.url || '';
@@ -188,7 +194,7 @@ function fitContent() {
   void stageContent.offsetHeight;
 
   const labelSpace = stageLabel.textContent ? stageLabel.offsetHeight + 40 : 20;
-  const tickerSpace = tickerActive ? stage.clientHeight * 0.09 : 0;
+  const tickerSpace = tickerActive ? tickerBar.offsetHeight + 8 : 0;
   const available = stage.clientHeight * 0.92 - labelSpace - tickerSpace;
   const needed = stageContent.scrollHeight;
 
@@ -203,6 +209,11 @@ window.addEventListener('resize', fitContent);
 // Scrolling lower-third ticker (EasyWorship-style) — independent of the main
 // slide, so an account number or notice can scroll continuously underneath
 // whatever is being projected without interrupting it.
+function hexToRgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
 function renderTicker(state) {
   tickerActive = !!(state.active && state.text);
   if (!tickerActive) {
@@ -211,9 +222,17 @@ function renderTicker(state) {
     return;
   }
   tickerText.textContent = state.text;
+  // Look: size %, text colour, bar colour, alignment (static mode), scroll on/off.
+  tickerBar.style.setProperty('--tk-scale', (state.size || 100) / 100);
+  tickerText.style.color = /^#[0-9a-f]{6}$/i.test(state.color || '') ? state.color : '';
+  tickerBar.style.background = /^#[0-9a-f]{6}$/i.test(state.bg || '') ? hexToRgba(state.bg, 0.92) : '';
+  const scrolling = state.scroll !== false;
+  tickerBar.classList.toggle('static', !scrolling);
+  tickerBar.dataset.align = state.align || 'center';
   // Speed scales with text length so longer messages don't zoom by too fast.
-  const duration = Math.max(10, state.text.length * 0.22);
-  tickerText.style.animationDuration = duration + 's';
+  const mult = { slow: 1.6, normal: 1, fast: 0.6 }[state.speed || 'normal'] || 1;
+  const duration = Math.max(10, state.text.length * 0.22) * mult;
+  tickerText.style.animationDuration = scrolling ? duration + 's' : '';
   tickerBar.classList.add('on');
   fitContent();
 }

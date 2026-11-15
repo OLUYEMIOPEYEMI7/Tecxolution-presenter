@@ -872,11 +872,57 @@ function selectBibleBrowserVerse(num, thenGoLive) {
 }
 
 // ================= Free Text (type-and-go-live, no presentation needed) =================
+// Look chosen in the Free Text box (size / colour / alignment / bold).
+let ftColorChosen = false;
+function readFreeTextStyle() {
+  return {
+    size: parseInt(document.getElementById('ft-size').value, 10) || 100,
+    color: ftColorChosen ? document.getElementById('ft-color').value : '',
+    align: document.getElementById('ft-align').value,
+    bold: document.getElementById('ft-bold').checked,
+  };
+}
+function applyFreeTextStyle(st) {
+  st = st || {};
+  document.getElementById('ft-size').value = st.size || 100;
+  document.getElementById('ft-size-val').textContent = (st.size || 100) + '%';
+  ftColorChosen = !!st.color;
+  if (st.color) document.getElementById('ft-color').value = st.color;
+  document.getElementById('ft-align').value = st.align || '';
+  document.getElementById('ft-bold').checked = st.bold !== false;
+}
+function restageFreeTextIfShowing() {
+  // If the preview currently holds this free text, refresh it so the
+  // operator sees size/colour/alignment changes immediately.
+  if (lastStagedState && lastStagedState.type === 'free-text') {
+    const text = document.getElementById('free-text-input').value.trim();
+    if (text) stageState({ type: 'free-text', text, style: readFreeTextStyle(), background: null });
+  }
+}
+['ft-size', 'ft-color', 'ft-align', 'ft-bold'].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => {
+    if (id === 'ft-color') ftColorChosen = true;
+    if (id === 'ft-size') document.getElementById('ft-size-val').textContent = el.value + '%';
+    restageFreeTextIfShowing();
+  });
+});
+document.getElementById('ft-color-reset').addEventListener('click', () => { ftColorChosen = false; restageFreeTextIfShowing(); });
+document.querySelectorAll('.swatches').forEach((box) => {
+  box.addEventListener('click', (e) => {
+    const c = e.target.dataset && e.target.dataset.c;
+    if (!c) return;
+    const input = document.getElementById(box.dataset.target);
+    input.value = c;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+});
+
 function stageFreeText(thenGoLive) {
   const text = document.getElementById('free-text-input').value.trim();
   if (!text) return;
   currentSongSections = []; scriptureChunks = [];
-  stageState({ type: 'free-text', text, background: null });
+  stageState({ type: 'free-text', text, style: readFreeTextStyle(), background: null });
   if (thenGoLive) goLive();
 }
 
@@ -887,6 +933,7 @@ function addFreeTextToSchedule() {
     displayTitle: '✍ ' + (text.length > 40 ? text.slice(0, 40) + '…' : text),
     stateType: 'free-text',
     text,
+    style: readFreeTextStyle(),
   });
 }
 
@@ -1149,7 +1196,8 @@ function loadScheduleItem(item, thenGoLive) {
     currentSongSections = []; scriptureChunks = [];
     currentDeckSlides = [];
     document.getElementById('free-text-input').value = item.text || '';
-    stageState({ type: 'free-text', text: item.text, background: null });
+    applyFreeTextStyle(item.style);
+    stageState({ type: 'free-text', text: item.text, style: item.style || readFreeTextStyle(), background: null });
     if (thenGoLive) goLive();
   } else if (item.stateType === 'media-video') {
     currentSongSections = []; scriptureChunks = [];
@@ -1652,10 +1700,38 @@ function updateTickerBtn() {
   btn.classList.toggle('danger', tickerActive);
 }
 
+function readTickerStyle() {
+  return {
+    size: parseInt(document.getElementById('tk-size').value, 10) || 100,
+    color: document.getElementById('tk-color').value,
+    bg: document.getElementById('tk-bg').value,
+    align: document.getElementById('tk-align').value,
+    scroll: document.getElementById('tk-scroll').checked,
+    speed: document.getElementById('tk-speed').value,
+  };
+}
+
 function sendTickerUpdate() {
   const text = document.getElementById('ticker-input').value.trim();
-  socket.emit('ticker-update', { active: tickerActive && !!text, text });
+  socket.emit('ticker-update', { active: tickerActive && !!text, text, ...readTickerStyle() });
 }
+
+// Ticker look: remembered on this computer, applied live while it is running.
+(function initTickerStyle() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('wp_ticker_style') || '{}'); } catch (e) {}
+  const ids = { size: 'tk-size', color: 'tk-color', bg: 'tk-bg', align: 'tk-align', speed: 'tk-speed' };
+  Object.keys(ids).forEach((k) => { if (saved[k] !== undefined && saved[k] !== '') document.getElementById(ids[k]).value = saved[k]; });
+  if (saved.scroll === false) document.getElementById('tk-scroll').checked = false;
+  document.getElementById('tk-size-val').textContent = document.getElementById('tk-size').value + '%';
+  ['tk-size', 'tk-color', 'tk-bg', 'tk-align', 'tk-speed', 'tk-scroll'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', () => {
+      document.getElementById('tk-size-val').textContent = document.getElementById('tk-size').value + '%';
+      try { localStorage.setItem('wp_ticker_style', JSON.stringify(readTickerStyle())); } catch (e) {}
+      if (tickerActive) sendTickerUpdate();
+    });
+  });
+})();
 
 // Update the live ticker text as the operator edits it, without needing to
 // stop/restart scrolling (debounced so it doesn't spam on every keystroke).
