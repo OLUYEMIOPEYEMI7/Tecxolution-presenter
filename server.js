@@ -1535,7 +1535,23 @@ io.use((socket, next) => {
   next();
 });
 
+// Fingerprint of the front-end files. Open projector / stage / remote pages
+// compare it on every (re)connect and reload themselves when it changes, so a
+// screen left open all week never keeps running yesterday's scripts.
+const BUILD_ID = (() => {
+  try {
+    const h = require('crypto').createHash('md5');
+    for (const dir of ['public/js', 'public/css', 'views']) {
+      for (const f of fs.readdirSync(path.join(__dirname, dir)).sort()) {
+        if (/\.(js|css|html)$/.test(f)) h.update(f).update(fs.readFileSync(path.join(__dirname, dir, f)));
+      }
+    }
+    return h.digest('hex').slice(0, 12);
+  } catch (e) { return String(Date.now()); }
+})();
+
 io.on('connection', (socket) => {
+  socket.emit('build-id', BUILD_ID);
   // Catch up any newly-connected client on every channel (also what makes a
   // reconnect after a Wi-Fi blip or server restart instantly correct).
   socket.emit('server-time', Date.now());

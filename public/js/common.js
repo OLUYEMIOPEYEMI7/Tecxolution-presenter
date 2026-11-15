@@ -39,3 +39,28 @@
     acquire();
   }
 })();
+
+
+// Reload-on-update: the server sends a fingerprint of the front-end files on
+// every (re)connect. If it changes while this page is open, the page is stale.
+// Projector / stage / remote reload themselves (a few seconds of jitter so they
+// don't all hit the server together); the control room shows a banner instead
+// so nothing the operator is typing is lost.
+window.watchBuild = function (socket) {
+  let known = null;
+  socket.on('build-id', (id) => {
+    if (known === null) { known = id; return; }
+    if (id === known) return;
+    if (location.pathname.indexOf('/control') === 0) {
+      if (document.getElementById('update-banner')) return;
+      const b = document.createElement('div');
+      b.id = 'update-banner';
+      b.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99999;background:#d4a437;color:#111;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5);cursor:pointer';
+      b.textContent = 'A new version is ready — click to refresh';
+      b.onclick = () => location.reload();
+      document.body.appendChild(b);
+    } else {
+      setTimeout(() => location.reload(), 500 + Math.random() * 3000);
+    }
+  });
+};

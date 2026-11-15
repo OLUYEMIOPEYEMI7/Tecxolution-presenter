@@ -4,6 +4,7 @@
 const _fetch = window.fetch.bind(window);
 window.fetch = (...a) => _fetch(...a).then((r) => { if (r.status === 401) location.href = '/login?next=/remote'; return r; });
 const socket = io();
+if (window.watchBuild) window.watchBuild(socket);
 const $ = (id) => document.getElementById(id);
 const esc = (t) => { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; };
 

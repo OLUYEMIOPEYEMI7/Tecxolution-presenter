@@ -1,4 +1,5 @@
 const socket = io();
+if (window.watchBuild) window.watchBuild(socket);
 socket.on('connect', () => { socket.emit('hello', 'display'); window.syncServerTime(socket); });
 
 // Auto-fullscreen when launched from the Control Room's "Open Projection

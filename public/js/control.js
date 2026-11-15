@@ -6,6 +6,7 @@ window.fetch = (...a) => _fetch(...a).then((r) => {
 });
 
 const socket = io();
+if (window.watchBuild) window.watchBuild(socket);
 let songs = [];
 let activeSong = null;
 let songSearchTerm = '';

@@ -2,6 +2,7 @@
 // Shows the current slide, the NEXT slide, a clock, the service timer and
 // any alert — the thing every professional presentation system has.
 const socket = io();
+if (window.watchBuild) window.watchBuild(socket);
 const $ = (id) => document.getElementById(id);
 const esc = (t) => { const d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; };
 
