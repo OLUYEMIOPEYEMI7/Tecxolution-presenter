@@ -52,9 +52,9 @@ window.watchBuild = function (socket) {
     if (known === null) { known = id; return; }
     if (id === known) return;
     if (location.pathname.indexOf('/control') === 0) {
-      if (document.getElementById('update-banner')) return;
+      if (document.getElementById('build-banner')) return;
       const b = document.createElement('div');
-      b.id = 'update-banner';
+      b.id = 'build-banner';
       b.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99999;background:#d4a437;color:#111;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5);cursor:pointer';
       b.textContent = 'A new version is ready — click to refresh';
       b.onclick = () => location.reload();

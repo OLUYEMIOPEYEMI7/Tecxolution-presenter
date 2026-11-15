@@ -32,6 +32,11 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   win.on('console', m => { if (m.type()==='error' && !/fonts\.g|ERR_|Failed to load resource|favicon/.test(m.text())) errs.push('console: '+m.text()); });
   await win.waitForSelector('#tabbtn-slides', { timeout: 20000 });
   await wait(1200);
+  // First-run quick-start guide opens on a fresh profile: check it, then skip it.
+  await win.waitForSelector('.tour-overlay', { timeout: 6000 }).catch(() => {});
+  ok('first-run quick-start guide appears on a fresh install', await win.locator('.tour-overlay').count() === 1);
+  await win.click('.tour-overlay [data-t="skip"]'); await wait(200);
+  ok('guide can be skipped', await win.locator('.tour-overlay').count() === 0);
 
   ok('control room loads from the LOCAL server', /^http:\/\/127\.0\.0\.1:\d+\/control/.test(win.url()), win.url());
   ok('signed in automatically (no password prompt)', await win.locator('#tabbtn-slides').isVisible());
